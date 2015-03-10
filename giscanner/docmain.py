@@ -24,9 +24,13 @@ import argparse
 from .docwriter import DocWriter
 from .sectionparser import generate_sections_file, write_sections_file
 from .transformer import Transformer
+from . import message
 
 
 def doc_main(args):
+    logger = message.MessageLogger.get(namespace=None)
+    logger.enable_warnings((message.WARNING, message.ERROR, message.FATAL))
+
     parser = argparse.ArgumentParser()
 
     parser.add_argument("girfile")
@@ -46,6 +50,14 @@ def doc_main(args):
     parser.add_argument("-s", "--write-sections-file",
                       action="store_true", dest="write_sections",
                       help="Generate and write out a sections file")
+    parser.add_argument("-O", "--online-links",
+                      action="store_true", dest="online_links",
+                      help="Generate online links")
+    parser.add_argument("-g", "--link-to-gtk-doc",
+                      action="store_true", dest="link_to_gtk_doc",
+                      help="Link to gtk-doc documentation, the documentation "
+                      "packages to link against need to be installed in "
+                      "/usr/share/gtk-doc")
 
     args = parser.parse_args(args[1:])
     if not args.output:
@@ -67,7 +79,9 @@ def doc_main(args):
         write_sections_file(fp, sections_file)
         fp.close()
     else:
-        writer = DocWriter(transformer, args.language, args.markdown_include_paths)
+        writer = DocWriter(transformer, args.language,
+                args.markdown_include_paths, online=args.online_links,
+                link_to_gtk_doc=args.link_to_gtk_doc)
         writer.write(args.output)
 
     return 0
