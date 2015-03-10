@@ -268,15 +268,44 @@ class HierarchyClass:
         self.children.append(child)
 
 
+class Section:
+
+    def __init__(self, name, node, global_table):
+        self.subsections = {}
+        self.symbols = {}
+        self.name = name
+        prev_node = None
+        for n in node.find("SYMBOLS"):
+            title = n.text
+            symbol = Symbol(title)
+            if prev_node:
+                prev_node.set_next(symbol)
+            self.symbols[title] = symbol
+            prev_node = symbol
+            global_table[title] = symbol
+
+
+class Symbol:
+
+    def __init__(self, name):
+        self.name = name
+        self.next_ = None
+
+    def set_next(self, symbol):
+        self.next_ = symbol
+
+
 class DocFormatter(object):
 
     def __init__(self, transformer, markdown_include_paths, link_to_gtk_doc,
-            online, resolve_implicit_links):
+            online, resolve_implicit_links, sections_file):
         self.online = online
         self.link_to_gtk_doc = link_to_gtk_doc
         self.resolve_implicit_links = resolve_implicit_links
         self._transformer = transformer
         self._scanner = DocstringScanner()
+        self.global_symbols_table = {}
+        self.sections = self._parse_sections_file(sections_file)
 
         # If we are processing a code block as defined by
         # https://wiki.gnome.org/Projects/GTK%2B/DocumentationSyntax/Markdown
@@ -291,6 +320,17 @@ class DocFormatter(object):
         self._warned_external_references = []
         # Support Headings
         self._opened_sections = 0
+
+    def _parse_sections_file(self, sections_file):
+        if not sections_file:
+            return None
+        sections = {}
+        tree = ET.parse(sections_file)
+        root = tree.getroot()
+        for n in root:
+            title = n.find("TITLE").text
+            sections[title] = Section(title, n, self.global_symbols_table)
+        return sections
 
     def _fill_reference_map(self, online):
         for node in os.listdir("/usr/share/gtk-doc/html"):
@@ -348,6 +388,27 @@ class DocFormatter(object):
         while self._opened_sections > 0:
             result += "</section>"
             self._opened_sections -= 1
+        return result
+
+    def format_xref_from_identifier(self, identifier):
+        result = ""
+        node = self._resolve_symbol(identifier)
+        if node:
+            result = make_page_id(node)
+        return result
+
+    def link_next_doc(self, node):
+        result = ""
+        if isinstance(node, ast.Function):
+            try:
+                symbol = self.global_symbols_table[node.symbol]
+                next_symbol = symbol.next_
+                if symbol.next_:
+                    result = '<link xref="'
+                    result += self.format_xref_from_identifier(symbol.next_.name)
+                    result += '" type="next"/>'
+            except KeyError:  # Class functions
+                pass
         return result
 
     def _resolve_type(self, ident):
@@ -1263,7 +1324,8 @@ LANGUAGES = {
 class DocWriter(object):
 
     def __init__(self, transformer, language, markdown_include_paths,
-            online=False, link_to_gtk_doc=False, resolve_implicit_links=False):
+            online=False, link_to_gtk_doc=False, resolve_implicit_links=False,
+            sections_file=None):
         self._transformer = transformer
 
         try:
@@ -1274,7 +1336,8 @@ class DocWriter(object):
         self._formatter = formatter_class(self._transformer,
                 markdown_include_paths, online=online,
                 link_to_gtk_doc=link_to_gtk_doc,
-                resolve_implicit_links=resolve_implicit_links)
+                resolve_implicit_links=resolve_implicit_links,
+                sections_file=sections_file)
         self._language = self._formatter.language
 
         self._lookup = self._get_template_lookup()

@@ -50,6 +50,9 @@ def doc_main(args):
     parser.add_argument("-s", "--write-sections-file",
                       action="store_true", dest="write_sections",
                       help="Generate and write out a sections file")
+    parser.add_argument("-u", "--sections-file",
+                      action="store", dest="sections_file",
+                      help="Sections file to use for ordering")
     parser.add_argument("-O", "--online-links",
                       action="store_true", dest="online_links",
                       help="Generate online links")
@@ -88,7 +91,8 @@ def doc_main(args):
         writer = DocWriter(transformer, args.language,
                 args.markdown_include_paths, online=args.online_links,
                 link_to_gtk_doc=args.link_to_gtk_doc,
-                resolve_implicit_links=args.resolve_implicit_links)
+                resolve_implicit_links=args.resolve_implicit_links,
+                sections_file=args.sections_file)
         writer.write(args.output)
 
     return 0
