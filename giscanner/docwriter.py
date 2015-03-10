@@ -226,16 +226,16 @@ class TemplatedScanner(object):
 class DocstringScanner(TemplatedScanner):
     def __init__(self):
         specs = [
+            ('!alpha', r'[a-zA-Z0-9_]+'),
+            ('!alpha_dash', r'[a-zA-Z0-9_-]+'),
+            ('!anything', r'.*'),
             ('note', r'\n+\>\s*<<note_contents:anything>>\s*\n'),
             ('new_paragraph', r'\n\n'),
             ('new_line', r'\n'),
-            ('!alpha', r'[a-zA-Z0-9_]+'),
-            ('!alpha_dash', r'[a-zA-Z0-9_-]+'),
             ('code_start_with_language',
                 r'\|\[\<!\-\-\s*language\s*\=\s*\"<<language_name:alpha>>\"\s*\-\-\>'),
             ('code_start', r'\|\['),
             ('code_end', r'\]\|'),
-            ('!anything', r'.*?'),
             ('property', r'#<<type_name:alpha>>:(<<property_name:alpha_dash>>)'),
             ('signal', r'#<<type_name:alpha>>::(<<signal_name:alpha_dash>>)'),
             ('type_name', r'#(<<type_name:alpha>>)'),
@@ -243,6 +243,7 @@ class DocstringScanner(TemplatedScanner):
             ('parameter', r'@<<param_name:alpha>>'),
             ('function_call', r'<<symbol_name:alpha>>\(\)'),
             ('include', r'{{\s*<<include_name:anything>>\s*}}'),
+            ('heading', r'#+\s+<<heading:anything>>'),
         ]
 
         super(DocstringScanner, self).__init__(specs)
@@ -266,6 +267,8 @@ class DocFormatter(object):
         self._fill_reference_map(online)
         # Avoid warning multiple times for external links we're not sure about
         self._warned_external_references = []
+        # Support Headings
+        self._opened_sections = 0
 
     def _fill_reference_map(self, online):
         if not os.path.exists(os.path.join(DATADIR, "gtk-doc", "html")):
@@ -323,6 +326,9 @@ class DocFormatter(object):
         if not processing_code:
             result += '</p>'
 
+        while self._opened_sections > 0:
+            result += "</section>"
+            self._opened_sections -= 1
         return result
 
     def _resolve_type(self, ident):
@@ -478,6 +484,28 @@ class DocFormatter(object):
             return match
         return "</p><note><p>" + props["note_contents"] + "</p></note><p>"
 
+    def _process_heading(self, node, match, props):
+        if self._processing_code:
+            return match
+
+        result = ""
+        match = match.strip("\n")
+        header_level = 0
+        while match[header_level] == "#":
+            header_level += 1
+
+        result += "</p>"
+        while self._opened_sections >= header_level:
+            result += "</section>"
+            self._opened_sections -= 1
+
+        while self._opened_sections < header_level:
+            result += "<section>"
+            self._opened_sections += 1
+
+        result += "<title>" + props["heading"] + "</title><p>"
+        return result
+
     def _process_token(self, node, tok):
         kind, match, props = tok
 
@@ -496,6 +524,7 @@ class DocFormatter(object):
             'new_paragraph': self._process_new_paragraph,
             'include': self._process_include,
             'note': self._process_note,
+            'heading': self._process_heading,
         }
 
         return dispatch[kind](node, match, props)
