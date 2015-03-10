@@ -228,6 +228,7 @@ class DocstringScanner(TemplatedScanner):
 
     def __init__(self):
         specs = [
+            ('note', r'\n+\>\s*<<note_contents:anything>>\s*\n'),
             ('new_paragraph', r'\n\n'),
             ('new_line', r'\n'),
             ('!alpha', r'[a-zA-Z0-9_]+'),
@@ -329,10 +330,12 @@ class DocFormatter(object):
             matches = self._transformer.split_ctype_namespaces(ident)
         except ValueError:
             return None
+
         for namespace, name in matches:
             node = namespace.get(name)
             if node:
                 return node
+
         return None
 
     def _resolve_symbol(self, symbol):
@@ -470,6 +473,11 @@ class DocFormatter(object):
 
         return result
 
+    def _process_note(self, node, match, props):
+        if self._processing_code:
+            return match
+        return "</p><note><p>" + props["note_contents"] + "</p></note><p>"
+
     def _process_token(self, node, tok):
         kind, match, props = tok
 
@@ -487,6 +495,7 @@ class DocFormatter(object):
             'new_line': self._process_new_line,
             'new_paragraph': self._process_new_paragraph,
             'include': self._process_include,
+            'note': self._process_note,
         }
 
         return dispatch[kind](node, match, props)
