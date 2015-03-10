@@ -28,6 +28,7 @@ import tempfile
 from xml.sax import saxutils
 from mako.lookup import TemplateLookup
 
+from . import message
 from . import ast, xmlwriter
 from .utils import to_underscores
 
@@ -80,6 +81,48 @@ def make_page_id(node, recursive=False):
         return '%s.%s' % (make_page_id(parent, recursive=True), node.shadows)
     else:
         return '%s.%s' % (make_page_id(parent, recursive=True), node.name)
+
+
+def make_gtkdoc_id(node, separator=None, formatter=None):
+    def class_style(name):
+        return name
+
+    def function_style(name):
+        snake_case = re.sub('(.)([A-Z][a-z]+)', r'\1_\2',
+                name)
+        snake_case = re.sub('([a-z0-9])([A-Z])', r'\1_\2', snake_case).lower()
+        return snake_case.replace("_", "-")
+
+    if separator is None:
+        separator = "-"
+        formatter = function_style
+        if isinstance(node, (ast.Class, ast.Enum, ast.Record, ast.Interface,
+                             ast.Callback, ast.Alias)):
+            separator = ""
+            formatter = class_style
+
+    if isinstance(node, ast.Namespace):
+        return formatter(node.identifier_prefixes[0])
+
+    if hasattr(node, '_chain') and node._chain:
+        parent = node._chain[-1]
+    else:
+        parent = getattr(node, 'parent', None)
+
+    if parent is None:
+        if isinstance(node, ast.Function) and node.shadows:
+            return '%s%s%s' % (formatter(node.namespace.name), separator,
+                    formatter(node.shadows))
+        else:
+            return '%s%s%s' % (formatter(node.namespace.name), separator,
+                    formatter(node.name))
+
+    if isinstance(node, ast.Function) and node.shadows:
+        return '%s%s%s' % (make_gtkdoc_id(parent, separator=separator,
+            formatter=formatter), separator, formatter(node.shadows))
+    else:
+        return '%s%s%s' % (make_gtkdoc_id(parent, separator=separator,
+            formatter=formatter), separator, formatter(node.name))
 
 
 def get_node_kind(node):
@@ -208,15 +251,46 @@ class DocstringScanner(TemplatedScanner):
 
 class DocFormatter(object):
 
-    def __init__(self, transformer, markdown_include_paths):
+    def __init__(self, transformer, markdown_include_paths, link_to_gtk_doc, online):
+        self.online = online
+        self.link_to_gtk_doc = link_to_gtk_doc
         self._transformer = transformer
         self._scanner = DocstringScanner()
+
         # If we are processing a code block as defined by
         # https://wiki.gnome.org/Projects/GTK%2B/DocumentationSyntax/Markdown
         # we won't insert paragraphs and will respect new lines.
         self._processing_code = False
         # Support to include text files through "{{ }}" blocks
         self._include_directories = markdown_include_paths
+        # Support external references
+        self._reference_map = dict({})
+        self._fill_reference_map(online)
+        # Avoid warning multiple times for external links we're not sure about
+        self._warned_external_references = []
+
+    def _fill_reference_map(self, online):
+        for node in os.listdir("/usr/share/gtk-doc/html"):
+            dir_ = os.path.join("/usr/share/gtk-doc/html", node)
+            if os.path.isdir(dir_):
+                try:
+                    online_reference, symbol_map = self._parse_sgml_index(dir_)
+                    self._reference_map[node] = (dir_, online_reference,
+                            symbol_map)
+                except IOError:
+                    online_reference = None
+
+    def _parse_sgml_index(self, dir_):
+        online_reference = None
+        symbol_map = dict({})
+        with open(os.path.join(dir_, "index.sgml"), 'r') as f:
+            for l in f:
+                if l.startswith("<ONLINE"):
+                    online_reference = l.split('"')[1]
+                elif l.startswith("<ANCHOR"):
+                    split_line = l.split('"')
+                    symbol_map[split_line[1]] = split_line[3]
+        return online_reference, symbol_map
 
     def escape(self, text):
         return saxutils.escape(text)
@@ -463,10 +537,63 @@ class DocFormatter(object):
         attrs = [('xref', make_page_id(node))] + attrdict.items()
         return xmlwriter.build_xml_tag('link', attrs)
 
+    def _find_reference(self, ns):
+        for package in ns.exported_packages:
+            try:
+                reference = self._reference_map[package]
+                return (reference, True)
+            except KeyError:
+                package = re.sub(r'\-[0-9]+\.[0-9]+$', '', package)
+                try:
+                    reference = self._reference_map[package]
+                    return (reference, False)
+                except KeyError:
+                    continue
+
+        return ((None, None), False)
+
+    def format_gtk_doc_attributes(self, node, attrdict):
+        ns = node.namespace
+        attrs = [('href', 'FIXME broken link to %s' % (node.name, ))]
+        ref, exact = self._find_reference(ns)
+
+        if not ref[0] and ns.name not in self._warned_external_references:
+            message.warn("No reference found for %s" % (ns.name + ns.version, ))
+            self._warned_external_references.append(ns.name)
+        elif self.online and not ref[1] and \
+                ns.name not in self._warned_external_references:
+            message.warn("No online reference found for %s" % (ns.name +
+                ns.version, ))
+            self._warned_external_references.append(ns.name)
+        elif not exact and ns.name not in self._warned_external_references:
+            message.warn("Using an approximate match for reference %s:%s" %
+                    (ns.name + ns.version, ref[0]))
+            self._warned_external_references.append(ns.name)
+
+        reference = None
+        if ref[0]:
+            gtk_doc_identifier = make_gtkdoc_id(node)
+            try:
+                reference = ref[2][gtk_doc_identifier]
+                reference = reference.split("/", 1)[1]
+            except KeyError:
+                pass
+
+        if self.online and reference:
+            attrs = [('href', '%s/%s' % (ref[1], reference))]
+        elif reference:
+            attrs = [('href', os.path.join(ref[0], reference))]
+
+        return attrs
+
     def format_external_xref(self, node, attrdict):
         ns = node.namespace
-        attrs = [('href', '../%s-%s/%s.html' % (ns.name, str(ns.version),
-                                                make_page_id(node)))]
+
+        if self.link_to_gtk_doc:
+            attrs = self.format_gtk_doc_attributes(node, attrdict)
+        else:
+            attrs = [('href', '../%s-%s/%s.html' % (ns.name, str(ns.version),
+                                                    make_page_id(node)))]
         attrs += attrdict.items()
         return xmlwriter.build_xml_tag('link', attrs, self.format_page_name(node))
 
@@ -983,7 +1110,8 @@ LANGUAGES = {
 
 class DocWriter(object):
 
-    def __init__(self, transformer, language, markdown_include_paths):
+    def __init__(self, transformer, language, markdown_include_paths,
+            online=False, link_to_gtk_doc=False):
         self._transformer = transformer
 
         try:
@@ -992,7 +1120,8 @@ class DocWriter(object):
             raise SystemExit("Unsupported language: %s" % (language, ))
 
         self._formatter = formatter_class(self._transformer,
-                markdown_include_paths)
+                markdown_include_paths, online=online,
+                link_to_gtk_doc=link_to_gtk_doc)
         self._language = self._formatter.language
 
         self._lookup = self._get_template_lookup()
