@@ -25,6 +25,11 @@ if test -z $AUTORECONF; then
         exit 1
 fi
 
+# install pre-commit hook for doing clean commits
+echo "installing pre-commit hooks"
+rm -f .git/hooks/pre-commit
+ln -s ../../misc/multi-pre-commit.hook .git/hooks/pre-commit
+
 autoreconf --force --install --verbose || exit $?
 
 cd "$olddir"
