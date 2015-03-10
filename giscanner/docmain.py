@@ -40,6 +40,9 @@ def doc_main(args):
     parser.add_argument("-I", "--add-include-path",
                       action="append", dest="include_paths", default=[],
                       help="include paths for other GIR files")
+    parser.add_argument("-M", "--markdown-include-path",
+                      action="append", dest="markdown_include_paths", default=[],
+                      help="include paths for markdown inclusion")
     parser.add_argument("-s", "--write-sections-file",
                       action="store_true", dest="write_sections",
                       help="Generate and write out a sections file")
@@ -64,7 +67,7 @@ def doc_main(args):
         write_sections_file(fp, sections_file)
         fp.close()
     else:
-        writer = DocWriter(transformer, args.language)
+        writer = DocWriter(transformer, args.language, args.markdown_include_paths)
         writer.write(args.output)
 
     return 0

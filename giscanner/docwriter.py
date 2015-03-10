@@ -193,12 +193,14 @@ class DocstringScanner(TemplatedScanner):
                 r'\|\[\<!\-\-\s*language\s*\=\s*\"<<language_name:alpha>>\"\s*\-\-\>'),
             ('code_start', r'\|\['),
             ('code_end', r'\]\|'),
+            ('!anything', r'.*?'),
             ('property', r'#<<type_name:alpha>>:(<<property_name:alpha_dash>>)'),
             ('signal', r'#<<type_name:alpha>>::(<<signal_name:alpha_dash>>)'),
             ('type_name', r'#(<<type_name:alpha>>)'),
             ('enum_value', r'%(<<member_name:alpha>>)'),
             ('parameter', r'@<<param_name:alpha>>'),
             ('function_call', r'<<symbol_name:alpha>>\(\)'),
+            ('include', r'{{\s*<<include_name:anything>>\s*}}'),
         ]
 
         super(DocstringScanner, self).__init__(specs)
@@ -206,13 +208,15 @@ class DocstringScanner(TemplatedScanner):
 
 class DocFormatter(object):
 
-    def __init__(self, transformer):
+    def __init__(self, transformer, markdown_include_paths):
         self._transformer = transformer
         self._scanner = DocstringScanner()
         # If we are processing a code block as defined by
         # https://wiki.gnome.org/Projects/GTK%2B/DocumentationSyntax/Markdown
         # we won't insert paragraphs and will respect new lines.
         self._processing_code = False
+        # Support to include text files through "{{ }}" blocks
+        self._include_directories = markdown_include_paths
 
     def escape(self, text):
         return saxutils.escape(text)
@@ -235,9 +239,15 @@ class DocFormatter(object):
         if doc is None:
             return ''
 
-        result = '<p>'
+        result = ""
+        processing_code = self._processing_code
+
+        if not processing_code:
+            result += '<p>'
         result += self.format_inline(node, doc)
-        result += '</p>'
+        if not processing_code:
+            result += '</p>'
+
         return result
 
     def _resolve_type(self, ident):
@@ -354,6 +364,32 @@ class DocFormatter(object):
             return '\n\n'
         return "</p><p>"
 
+    def _process_include(self, node, match, props):
+        filename = props["include_name"].strip()
+        f = None
+
+        try:
+            f = open(filename, 'r')
+        except IOError:
+            for dir_ in self._include_directories:
+                try:
+                    f = open(os.path.join(dir_, filename), 'r')
+                    break
+                except:
+                    continue
+        if f:
+            contents = f.read()
+            if self._processing_code:
+                result = self.escape(contents)
+            else:
+                result = self.format_inline(node, contents)
+            f.close()
+        else:
+            message.warn("Could not find file %s" % (props["include_name"], ))
+            result = match
+
+        return result
+
     def _process_token(self, node, tok):
         kind, match, props = tok
 
@@ -370,6 +406,7 @@ class DocFormatter(object):
             'code_end': self._process_code_end,
             'new_line': self._process_new_line,
             'new_paragraph': self._process_new_paragraph,
+            'include': self._process_include,
         }
 
         return dispatch[kind](node, match, props)
@@ -946,7 +983,7 @@ LANGUAGES = {
 
 class DocWriter(object):
 
-    def __init__(self, transformer, language):
+    def __init__(self, transformer, language, markdown_include_paths):
         self._transformer = transformer
 
         try:
@@ -954,7 +991,8 @@ class DocWriter(object):
         except KeyError:
             raise SystemExit("Unsupported language: %s" % (language, ))
 
-        self._formatter = formatter_class(self._transformer)
+        self._formatter = formatter_class(self._transformer,
+                markdown_include_paths)
         self._language = self._formatter.language
 
         self._lookup = self._get_template_lookup()
