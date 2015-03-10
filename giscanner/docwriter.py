@@ -380,11 +380,17 @@ class DocFormatter(object):
         return self.format_xref(signal)
 
     def _process_type_name(self, node, match, props):
-        type_ = self._resolve_type(props['type_name'])
+        ident = props['type_name']
+        type_ = self._resolve_type(ident)
+        plural = False
         if type_ is None:
-            return match
+            singularized = ident.rstrip("s")  # Try to remove plural
+            type_ = self._resolve_type(singularized)
+            plural = True
+            if type_ is None:
+                return match
 
-        return self.format_xref(type_)
+        return self.format_xref(type_, pluralize=plural)
 
     def _process_enum_value(self, node, match, props):
         member_name = props['member_name']
@@ -521,21 +527,25 @@ class DocFormatter(object):
         else:
             return make_page_id(node)
 
-    def format_xref(self, node, **attrdict):
+    def format_xref(self, node, pluralize=False, **attrdict):
         if node is None or not hasattr(node, 'namespace'):
             attrs = [('xref', 'index')] + attrdict.items()
             return xmlwriter.build_xml_tag('link', attrs)
         elif isinstance(node, ast.Member):
             # Enum/BitField members are linked to the main enum page.
-            return self.format_xref(node.parent, **attrdict) + '.' + node.name
+            return self.format_xref(node.parent, pluralize=pluralize, **attrdict) + '.' + node.name
         elif node.namespace is self._transformer.namespace:
-            return self.format_internal_xref(node, attrdict)
+            return self.format_internal_xref(node, attrdict, pluralize=pluralize)
         else:
-            return self.format_external_xref(node, attrdict)
+            return self.format_external_xref(node, attrdict, pluralize=pluralize)
 
-    def format_internal_xref(self, node, attrdict):
+    def format_internal_xref(self, node, attrdict, pluralize=False):
         attrs = [('xref', make_page_id(node))] + attrdict.items()
-        return xmlwriter.build_xml_tag('link', attrs)
+        if not pluralize:
+            return xmlwriter.build_xml_tag('link', attrs)
+        else:
+            return xmlwriter.build_xml_tag('link', attrs, make_page_id(node) +
+            "s")
 
     def _find_reference(self, ns):
         for package in ns.exported_packages:
@@ -586,7 +596,7 @@ class DocFormatter(object):
 
         return attrs
 
-    def format_external_xref(self, node, attrdict):
+    def format_external_xref(self, node, attrdict, pluralize=False):
         ns = node.namespace
 
         if self.link_to_gtk_doc:
@@ -595,7 +605,11 @@ class DocFormatter(object):
             attrs = [('href', '../%s-%s/%s.html' % (ns.name, str(ns.version),
                                                     make_page_id(node)))]
         attrs += attrdict.items()
-        return xmlwriter.build_xml_tag('link', attrs, self.format_page_name(node))
+        if not pluralize:
+            return xmlwriter.build_xml_tag('link', attrs, self.format_page_name(node))
+        else:
+            return xmlwriter.build_xml_tag('link', attrs,
+                    self.format_page_name(node) + "s")
 
     def field_is_writable(self, field):
         return True
