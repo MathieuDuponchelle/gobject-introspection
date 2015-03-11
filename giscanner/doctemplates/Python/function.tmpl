@@ -24,6 +24,9 @@
 @accepts(${', '.join((formatter.format_type(arg.type) for arg in formatter.get_in_parameters(node)))})
 % endif
 @returns(${formatter.format_type(node.retval.type) | x})
+% if node.throws:
+@throws(GLib.Error)
+% endif
 def ${node.name}(${', '.join((formatter.format_parameter_name(node, arg) for arg in formatter.get_in_parameters(node)))}):
     # Python wrapper for ${node.symbol}()
   </code></synopsis></%block>
