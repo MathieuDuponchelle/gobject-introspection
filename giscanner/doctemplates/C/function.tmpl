@@ -38,7 +38,17 @@ ${formatter.format_type(arg.type) | x} ${arg.argname}\
 % endif
 % endfor
 % endif
+% if node.throws:
+% if not formatter.get_in_parameters(node):
+GError **error);
+% else:
+,
+${' ' * (len(formatter.format_type(node.retval.type)) + len(formatter.format_function_name(node)) + 3)}\
+GError **error);
+% endif
+% else:
 );
+% endif
   </code></synopsis></%block>
 <%block name="details">
 % if formatter.get_in_parameters(node) or node.retval:
