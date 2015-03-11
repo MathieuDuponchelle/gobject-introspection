@@ -250,9 +250,11 @@ class DocstringScanner(TemplatedScanner):
 
 
 class DocFormatter(object):
-    def __init__(self, transformer, markdown_include_paths, link_to_gtk_doc, online):
+    def __init__(self, transformer, markdown_include_paths, link_to_gtk_doc,
+            online, resolve_implicit_links):
         self.online = online
         self.link_to_gtk_doc = link_to_gtk_doc
+        self.resolve_implicit_links = resolve_implicit_links
         self._transformer = transformer
         self._scanner = DocstringScanner()
 
@@ -361,8 +363,30 @@ class DocFormatter(object):
                 return item
         raise KeyError("Could not find %s" % (name, ))
 
+    def _resolve_implicit_links(self, match):
+        match = self.escape(match)
+        if not self.resolve_implicit_links:
+            return match
+
+        implicit_links = dict({})
+        s = re.split(" |\(|\)", match)
+
+        for word in s:
+            if not word:
+                continue
+            type_ = self._resolve_type(word)
+            symbol = self._resolve_symbol(word)
+            if type_:
+                implicit_links[word] = self.format_xref(type_, linkname=word)
+            elif symbol:
+                implicit_links[word] = self.format_xref(symbol, linkname=word)
+
+        for word, xref in implicit_links.iteritems():
+            match = match.replace(word, xref)
+        return match
+
     def _process_other(self, node, match, props):
-        return self.escape(match)
+        return self._resolve_implicit_links(match)
 
     def _process_property(self, node, match, props):
         type_node = self._resolve_type(props['type_name'])
@@ -469,7 +493,7 @@ class DocFormatter(object):
         if f:
             contents = f.read()
             if self._processing_code:
-                result = self.escape(contents)
+                result = self._resolve_implicit_links(contents)
             else:
                 result = self.format_inline(node, contents)
             f.close()
@@ -565,21 +589,23 @@ class DocFormatter(object):
         else:
             return make_page_id(node)
 
-    def format_xref(self, node, pluralize=False, **attrdict):
+    def format_xref(self, node, pluralize=False, linkname=None, **attrdict):
         if node is None or not hasattr(node, 'namespace'):
             attrs = [('xref', 'index')] + attrdict.items()
-            return xmlwriter.build_xml_tag('link', attrs)
+            return xmlwriter.build_xml_tag('link', attrs, linkname)
         elif isinstance(node, ast.Member):
             # Enum/BitField members are linked to the main enum page.
-            return self.format_xref(node.parent, pluralize=pluralize, **attrdict) + '.' + node.name
+            return self.format_xref(node.parent, linkname=linkname, pluralize=pluralize, **attrdict) + '.' + node.name
         elif node.namespace is self._transformer.namespace:
-            return self.format_internal_xref(node, attrdict, pluralize=pluralize)
+            return self.format_internal_xref(node, attrdict, linkname=linkname, pluralize=pluralize)
         else:
-            return self.format_external_xref(node, attrdict, pluralize=pluralize)
+            return self.format_external_xref(node, attrdict, linkname=linkname, pluralize=pluralize)
 
-    def format_internal_xref(self, node, attrdict, pluralize=False):
+    def format_internal_xref(self, node, attrdict, linkname=None, pluralize=False):
         attrs = [('xref', make_page_id(node))] + attrdict.items()
-        if not pluralize:
+        if linkname:
+            return xmlwriter.build_xml_tag('link', attrs, linkname)
+        elif not pluralize:
             return xmlwriter.build_xml_tag('link', attrs)
         else:
             return xmlwriter.build_xml_tag('link', attrs, make_page_id(node) +
@@ -634,7 +660,7 @@ class DocFormatter(object):
 
         return attrs
 
-    def format_external_xref(self, node, attrdict, pluralize=False):
+    def format_external_xref(self, node, attrdict, linkname=None, pluralize=False):
         ns = node.namespace
 
         if self.link_to_gtk_doc:
@@ -643,7 +669,9 @@ class DocFormatter(object):
             attrs = [('href', '../%s-%s/%s.html' % (ns.name, str(ns.version),
                                                     make_page_id(node)))]
         attrs += attrdict.items()
-        if not pluralize:
+        if linkname:
+            return xmlwriter.build_xml_tag('link', attrs, linkname)
+        elif not pluralize:
             return xmlwriter.build_xml_tag('link', attrs, self.format_page_name(node))
         else:
             return xmlwriter.build_xml_tag('link', attrs,
@@ -1161,7 +1189,7 @@ LANGUAGES = {
 
 class DocWriter(object):
     def __init__(self, transformer, language, markdown_include_paths,
-            online=False, link_to_gtk_doc=False):
+            online=False, link_to_gtk_doc=False, resolve_implicit_links=False):
         self._transformer = transformer
 
         try:
@@ -1171,7 +1199,8 @@ class DocWriter(object):
 
         self._formatter = formatter_class(self._transformer,
                 markdown_include_paths, online=online,
-                link_to_gtk_doc=link_to_gtk_doc)
+                link_to_gtk_doc=link_to_gtk_doc,
+                resolve_implicit_links=resolve_implicit_links)
         self._language = self._formatter.language
 
         self._lookup = self._get_template_lookup()

@@ -58,6 +58,14 @@ def doc_main(args):
                       help="Link to gtk-doc documentation, the documentation "
                       "packages to link against need to be installed in "
                       "/usr/share/gtk-doc")
+    parser.add_argument("-R", "--resolve-implicit-links",
+                      action="store_true", dest="resolve_implicit_links",
+                      help="All the space and parentheses-separated tokens "
+                      "in the comment blocks will be analyzed to see if they "
+                      "map to an existing code or symbol. If they do, a link "
+                      "will be inserted, for example 'pass that function "
+                      "a GList' will resolve the existing GList type and "
+                      "insert a link to its documentation")
 
     args = parser.parse_args(args[1:])
     if not args.output:
@@ -81,7 +89,8 @@ def doc_main(args):
     else:
         writer = DocWriter(transformer, args.language,
                 args.markdown_include_paths, online=args.online_links,
-                link_to_gtk_doc=args.link_to_gtk_doc)
+                link_to_gtk_doc=args.link_to_gtk_doc,
+                resolve_implicit_links=args.resolve_implicit_links)
         writer.write(args.output)
 
     return 0
