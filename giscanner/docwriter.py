@@ -26,6 +26,7 @@ import re
 import tempfile
 
 from xml.sax import saxutils
+from xml.etree import ElementTree as ET
 from mako.lookup import TemplateLookup
 
 from . import message
@@ -249,6 +250,38 @@ class DocstringScanner(TemplatedScanner):
         ]
 
         super(DocstringScanner, self).__init__(specs)
+
+
+class HierarchyClass:
+
+    def __init__(self, name, node=None):
+        self.parents = []
+        self.children = []
+        self.name = name
+        self.node = node
+
+    def add_parent(self, parent):
+        self.parents.append(parent)
+        parent.add_child(self)
+
+    def add_child(self, child):
+        self.children.append(child)
+
+
+def indent(elem, level=0):
+    i = "\n" + level * "  "
+    if len(elem):
+        if not elem.text or not elem.text.strip():
+            elem.text = i + "  "
+        if not elem.tail or not elem.tail.strip():
+            elem.tail = i
+        for elem in elem:
+            indent(elem, level + 1)
+        if not elem.tail or not elem.tail.strip():
+            elem.tail = i
+    else:
+        if level and (not elem.tail or not elem.tail.strip()):
+            elem.tail = i
 
 
 class DocFormatter(object):
@@ -713,16 +746,71 @@ class DocFormatter(object):
     def to_lower_camel_case(self, string):
         return string[0].lower() + string[1:]
 
-    def get_class_hierarchy(self, node):
-        assert isinstance(node, ast.Class)
+    def add_parent_class(self, parent_type, child_class, classes, is_interface=False):
+        parent = self._transformer.lookup_typenode(parent_type)
+        parent_name = "%s.%s" % (parent.namespace.name, parent.name)
+        try:
+            parent_class = classes[parent_name]
+        except KeyError:
+            parent_class = HierarchyClass(parent_name, parent)
+        child_class.add_parent(parent_class)
+        if not is_interface:
+            self.create_hierarchy_classes(parent, parent_class, classes)
+        else:
+            # Interfaces don't explicitly inherit from GInterface.
+            try:
+                parent_interface = classes["GObject.GInterface"]
+            except KeyError:
+                parent_interface = HierarchyClass("GObject.GInterface")
+                classes["GObject.GInterface"] = parent_interface
+            parent_class.add_parent(parent_interface)
 
-        parent_chain = [node]
-        while node.parent_type:
-            node = self._transformer.lookup_typenode(node.parent_type)
-            parent_chain.append(node)
+    def create_hierarchy_classes(self, node, child_class, classes):
+        name = "%s.%s" % (node.namespace.name, node.name)
+        classes[name] = child_class
+        parent = None
+        if node.parent_type:
+            parent = self._transformer.lookup_typenode(node.parent_type)
+            self.add_parent_class(node.parent_type, child_class, classes)
+        if hasattr(node, "interfaces"):
+            for interface in node.interfaces:
+                if not parent or interface not in parent.interfaces:
+                    self.add_parent_class(interface, child_class, classes,
+                            is_interface=True)
+        return classes
 
-        parent_chain.reverse()
-        return parent_chain
+    def dump_tree(self, klass, xml_string):
+        xml_string += "<item>"
+        xml_string += self.format_xref(klass.node, linkname=klass.name)
+        for n in klass.children:
+            xml_string = self.dump_tree(n, xml_string)
+        xml_string += "</item>"
+        return xml_string
+
+    def get_leaves(self, klass, leaves):
+        if not klass.parents:
+            leaves.add(klass)
+        for parent in klass.parents:
+            self.get_leaves(parent, leaves)
+        return leaves
+
+    def dump_class(self, klass):
+        leaves = self.get_leaves(klass, leaves=set({}))
+        xml_string = "<tree>"
+        while leaves:
+            klass = leaves.pop()
+            xml_string = self.dump_tree(klass, xml_string)
+        xml_string += "</tree>"
+        return xml_string
+
+    def dump_class_hierarchy(self, node):
+        name = "%s.%s" % (node.namespace.name, node.name)
+        child_class = HierarchyClass(name, node)
+        classes = self.create_hierarchy_classes(node, child_class, dict({}))
+        xml_string = self.dump_class(child_class)
+        root = ET.fromstring(xml_string)
+        indent(root, level=2)
+        return ET.tostring(root)
 
     def format_prerequisites(self, node):
         assert isinstance(node, ast.Interface)
