@@ -19,7 +19,7 @@
 
 import re
 from . import ast
-from .utils import to_underscores
+from .utils import to_underscores_noprefix
 
 
 class SectionsFile(object):
@@ -139,7 +139,7 @@ def generate_sections_file(transformer):
             append_symbol(general_section, node.symbol)
         elif isinstance(node, (ast.Class, ast.Interface)):
             gtype_name = node.gtype_name
-            file_name = to_underscores(gtype_name).replace('_', '-').lower()
+            file_name = to_underscores_noprefix(gtype_name).replace('_', '-').lower()
             section = new_section(file_name, gtype_name)
             append_symbol(section, gtype_name)
             append_symbol(section, node.glib_type_struct.target_giname.replace('.', ''))
