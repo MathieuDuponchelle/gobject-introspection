@@ -31,7 +31,7 @@ from mako.lookup import TemplateLookup
 
 from . import message
 from . import ast, xmlwriter
-from .utils import to_underscores
+from .utils import to_underscores, indent
 
 # Freely inspired from
 # https://github.com/GNOME/yelp-xsl/blob/master/js/syntax.html
@@ -266,22 +266,6 @@ class HierarchyClass:
 
     def add_child(self, child):
         self.children.append(child)
-
-
-def indent(elem, level=0):
-    i = "\n" + level * "  "
-    if len(elem):
-        if not elem.text or not elem.text.strip():
-            elem.text = i + "  "
-        if not elem.tail or not elem.tail.strip():
-            elem.tail = i
-        for elem in elem:
-            indent(elem, level + 1)
-        if not elem.tail or not elem.tail.strip():
-            elem.tail = i
-    else:
-        if level and (not elem.tail or not elem.tail.strip()):
-            elem.tail = i
 
 
 class DocFormatter(object):
