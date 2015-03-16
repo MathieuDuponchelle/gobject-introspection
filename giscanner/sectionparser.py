@@ -19,15 +19,18 @@
 
 import re
 from . import ast
-from .utils import to_underscores_noprefix
+from .utils import to_underscores_noprefix, indent
+from xml.etree import ElementTree as ET
 
 
 class SectionsFile(object):
+
     def __init__(self, sections):
         self.sections = sections
 
 
 class Section(object):
+
     def __init__(self):
         self.file = None
         self.title = None
@@ -36,6 +39,7 @@ class Section(object):
 
 
 class Subsection(object):
+
     def __init__(self, name):
         self.name = name
         self.symbols = []
@@ -94,26 +98,34 @@ def parse_sections_file(lines):
 
 
 def write_sections_file(f, sections_file):
+    result = "<SECTIONS>\n"
     for section in sections_file.sections:
-        f.write("\n<SECTION>\n")
+        result += "\n<SECTION>\n"
         if section.file is not None:
-            f.write("<FILE>%s</FILE>\n" % (section.file, ))
+            result += "<FILE>%s</FILE>\n" % (section.file, )
         if section.title is not None:
-            f.write("<TITLE>%s</TITLE>\n" % (section.title, ))
+            result += "<TITLE>%s</TITLE>\n" % (section.title, )
         if section.includes is not None:
-            f.write("<INCLUDE>%s</INCLUDE>\n" % (section.includes, ))
+            result += "<INCLUDE>%s</INCLUDE>\n" % (section.includes, )
 
         is_first_subsection = True
         for subsection in section.subsections:
             if subsection.name is not None:
-                f.write("<SUBSECTION %s>\n" % (subsection.name, ))
+                result += "<SUBSECTION %s>\n" % (subsection.name, )
             elif not is_first_subsection:
-                f.write("\n<SUBSECTION>\n")
+                result += "\n<SUBSECTION>\n"
 
             is_first_subsection = False
 
+            result += "\n<SYMBOLS>\n"
             for symbol in subsection.symbols:
-                f.write(symbol + "\n")
+                result += "<SYMBOL>" + symbol + "</SYMBOL>\n"
+            result += "</SYMBOLS>\n"
+        result += "</SECTION>\n"
+    result += "</SECTIONS>\n"
+    root = ET.fromstring(result)
+    indent(root)
+    f.write(ET.tostring(root))
 
 
 def generate_sections_file(transformer):
