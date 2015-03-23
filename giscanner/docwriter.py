@@ -333,8 +333,8 @@ class DocFormatter(object):
         return sections
 
     def _fill_reference_map(self, online):
-        for node in os.listdir("/usr/share/gtk-doc/html"):
-            dir_ = os.path.join("/usr/share/gtk-doc/html", node)
+        for node in os.listdir(os.path.join(DATADIR, "gtk-doc/html")):
+            dir_ = os.path.join(DATADIR, "gtk-doc/html", node)
             if os.path.isdir(dir_):
                 try:
                     online_reference, symbol_map = self._parse_sgml_index(dir_)
