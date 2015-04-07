@@ -476,7 +476,7 @@ class DocFormatter(object):
         except (AttributeError, KeyError):
             return match
 
-        return self.format_xref(prop)
+        return self.format_xref(prop, linkname=props['property_name'])
 
     def _process_signal(self, node, match, props):
         type_node = self._resolve_type(props['type_name'])
