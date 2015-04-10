@@ -433,6 +433,12 @@ class DocFormatter(object):
             node = namespace.get_by_symbol(symbol)
             if node:
                 return node
+
+        if not node:
+            for namespace, name in matches:
+                node = namespace.get(name)
+                if node:
+                    return node
         return None
 
     def _find_thing(self, list_, name):
@@ -671,8 +677,10 @@ class DocFormatter(object):
         if node is None or not hasattr(node, 'namespace'):
             attrs = [('xref', 'index')] + attrdict.items()
             return xmlwriter.build_xml_tag('link', attrs, linkname)
-        elif isinstance(node, ast.Member):
-            # Enum/BitField members are linked to the main enum page.
+        elif isinstance(node, ast.Member) and (self.link_to_gtk_doc is False or
+                node.namespace is self._transformer.namespace):
+            # Enum/BitField members are linked to the main enum page, except
+            # when linking to gtk doc external references
             return self.format_xref(node.parent, linkname=linkname, pluralize=pluralize, **attrdict) + '.' + node.name
         elif node.namespace is self._transformer.namespace:
             return self.format_internal_xref(node, attrdict, linkname=linkname, pluralize=pluralize)
@@ -725,6 +733,8 @@ class DocFormatter(object):
         reference = None
         if ref[0]:
             gtk_doc_identifier = make_gtkdoc_id(node)
+            if isinstance(node, (ast.Constant, ast.Member)):
+                gtk_doc_identifier = gtk_doc_identifier.upper() + ":CAPS"
             try:
                 reference = ref[2][gtk_doc_identifier]
                 reference = reference.split("/", 1)[1]
