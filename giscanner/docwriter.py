@@ -681,11 +681,14 @@ class DocFormatter(object):
                 node.namespace is self._transformer.namespace):
             # Enum/BitField members are linked to the main enum page, except
             # when linking to gtk doc external references
-            return self.format_xref(node.parent, linkname=linkname, pluralize=pluralize, **attrdict) + '.' + node.name
+            return self.format_xref(node.parent, linkname=linkname,
+                    pluralize=pluralize, **attrdict) + '.' + node.name
         elif node.namespace is self._transformer.namespace:
-            return self.format_internal_xref(node, attrdict, linkname=linkname, pluralize=pluralize)
+            return self.format_internal_xref(node, attrdict,
+                    linkname=linkname, pluralize=pluralize)
         else:
-            return self.format_external_xref(node, attrdict, linkname=linkname, pluralize=pluralize)
+            return self.format_external_xref(node, attrdict,
+                    linkname=linkname, pluralize=pluralize)
 
     def format_internal_xref(self, node, attrdict, linkname=None, pluralize=False):
         attrs = [('xref', make_page_id(node))] + attrdict.items()
