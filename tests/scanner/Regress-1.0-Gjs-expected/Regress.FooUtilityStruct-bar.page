@@ -6,6 +6,8 @@
       xmlns:api="http://projectmallard.org/experimental/api/"
       xmlns:ui="http://projectmallard.org/1.0/ui/">
   <info>
+  
+  
     <link xref="Regress.FooUtilityStruct" group="field" type="guide"/>
     <title type="link" role="topic">bar</title>
   </info>

@@ -6,6 +6,8 @@
       xmlns:api="http://projectmallard.org/experimental/api/"
       xmlns:ui="http://projectmallard.org/1.0/ui/">
   <info>
+  
+  
     <link xref="Regress.TestInheritDrawable" group="method" type="guide"/>
     <api:function>
       <api:returns>
@@ -25,7 +27,8 @@
   <title>regress_test_inherit_drawable_do_foo_maybe_throw</title>
   <synopsis><code mime="text/x-csrc">
 void regress_test_inherit_drawable_do_foo_maybe_throw (RegressTestInheritDrawable* drawable,
-                                                       int x);
+                                                       int x,
+                                                       GError **error);
   </code></synopsis>
 
 

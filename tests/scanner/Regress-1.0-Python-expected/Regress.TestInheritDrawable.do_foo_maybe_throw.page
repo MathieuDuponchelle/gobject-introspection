@@ -6,6 +6,8 @@
       xmlns:api="http://projectmallard.org/experimental/api/"
       xmlns:ui="http://projectmallard.org/1.0/ui/">
   <info>
+  
+  
     <link xref="Regress.TestInheritDrawable" group="method" type="guide"/>
     <api:function>
       <api:returns>
@@ -26,6 +28,7 @@
   <synopsis><code mime="text/x-python">
 @accepts(Regress.TestInheritDrawable, int)
 @returns(none)
+@throws(GLib.Error)
 def do_foo_maybe_throw(self, x):
     # Python wrapper for regress_test_inherit_drawable_do_foo_maybe_throw()
   </code></synopsis>
