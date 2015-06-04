@@ -160,5 +160,7 @@ def generate_sections_file(transformer):
                 append_symbol(section, meth.symbol)
             for meth in node.static_methods:
                 append_symbol(section, meth.symbol)
+            for meth in node.constructors:
+                append_symbol(section, meth.symbol)
 
     return SectionsFile(sections)
