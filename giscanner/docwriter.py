@@ -272,6 +272,7 @@ class Section:
         self.subsections = {}
         self.symbols = {}
         self.name = name
+        self.next_section = None
         prev_node = None
         for n in node.find("SYMBOLS"):
             title = n.text
@@ -281,6 +282,9 @@ class Section:
             self.symbols[title] = symbol
             prev_node = symbol
             global_table[title] = symbol
+
+    def set_next(self, section):
+        self.next_section = section
 
 
 class Symbol:
@@ -324,9 +328,14 @@ class DocFormatter(object):
         sections = {}
         tree = ET.parse(sections_file)
         root = tree.getroot()
+        previous_section = None
         for n in root:
             title = n.find("TITLE").text
-            sections[title] = Section(title, n, self.global_symbols_table)
+            section = Section(title, n, self.global_symbols_table)
+            sections[title] = section
+            if previous_section:
+                previous_section.set_next (section)
+            previous_section = section
         return sections
 
     def _fill_reference_map(self, online):
@@ -393,6 +402,10 @@ class DocFormatter(object):
     def format_xref_from_identifier(self, identifier):
         result = ""
         node = self._resolve_symbol(identifier)
+
+        if not node:
+            node = self._resolve_type(identifier)
+
         if node:
             result = make_page_id(node)
         return result
@@ -409,6 +422,17 @@ class DocFormatter(object):
                     result += '" type="next"/>'
             except KeyError:  # Class functions
                 pass
+        elif isinstance(node, (ast.Class, ast.Interface)) and self.sections:
+            try:
+                section = self.sections[node.gtype_name]
+                next_section = section.next_section
+                if next_section:
+                    result = '<link xref="'
+                    result += self.format_xref_from_identifier(next_section.name)
+                    result += '" type="next"/>'
+            except KeyError:
+                pass
+
         return result
 
     def _resolve_type(self, ident):
