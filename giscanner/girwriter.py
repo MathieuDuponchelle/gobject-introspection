@@ -115,6 +115,8 @@ class GIRWriter(XMLWriter):
             self._write_alias(node)
         elif isinstance(node, ast.Constant):
             self._write_constant(node)
+        elif isinstance(node, ast.DocSection):
+            self._write_doc_section(node)
         else:
             print 'WRITER: Unhandled node', node
 
@@ -391,6 +393,11 @@ class GIRWriter(XMLWriter):
             attrs.append(('glib:nick', member.nick))
         with self.tagcontext('member', attrs):
             self._write_generic(member)
+
+    def _write_doc_section(self, doc_section):
+        attrs = [('name', doc_section.name)]
+        with self.tagcontext('docsection', attrs):
+            self._write_generic(doc_section)
 
     def _write_constant(self, constant):
         attrs = [('name', constant.name),

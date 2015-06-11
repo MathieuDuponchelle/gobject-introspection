@@ -154,6 +154,8 @@ def get_node_kind(node):
         node_kind = 'callback'
     elif isinstance(node, ast.Field):
         node_kind = 'field'
+    elif isinstance(node, ast.DocSection):
+        node_kind = 'docsection'
     else:
         node_kind = 'default'
 
@@ -334,7 +336,7 @@ class DocFormatter(object):
             section = Section(title, n, self.global_symbols_table)
             sections[title] = section
             if previous_section:
-                previous_section.set_next (section)
+                previous_section.set_next(section)
             previous_section = section
         return sections
 
@@ -422,16 +424,27 @@ class DocFormatter(object):
                     result += '" type="next"/>'
             except KeyError:  # Class functions
                 pass
-        elif isinstance(node, (ast.Class, ast.Interface)) and self.sections:
-            try:
-                section = self.sections[node.gtype_name]
-                next_section = section.next_section
-                if next_section:
-                    result = '<link xref="'
-                    result += self.format_xref_from_identifier(next_section.name)
-                    result += '" type="next"/>'
-            except KeyError:
-                pass
+        elif self.sections:
+            if isinstance(node, (ast.Class, ast.Interface)):
+                try:
+                    section = self.sections[node.gtype_name]
+                    next_section = section.next_section
+                    if next_section:
+                        result = '<link xref="'
+                        result += self.format_xref_from_identifier(next_section.name)
+                        result += '" type="next"/>'
+                except KeyError:
+                    pass
+            elif isinstance(node, (ast.DocSection)):
+                try:
+                    section = self.sections[node.name]
+                    next_section = section.next_section
+                    if next_section:
+                        result = '<link xref="'
+                        result += self.format_xref_from_identifier(next_section.name)
+                        result += '" type="next"/>'
+                except KeyError:
+                    pass
 
         return result
 
