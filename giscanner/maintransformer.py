@@ -632,7 +632,7 @@ class MainTransformer(object):
         if block is None:
             return
 
-        if block.description:
+        if block.description and not node.doc:
             node.doc = block.description
 
         since_tag = block.tags.get(TAG_SINCE)
