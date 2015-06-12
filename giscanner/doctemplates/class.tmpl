@@ -4,15 +4,7 @@
 % if isinstance(node, ast.Class):
   <synopsis>
     <title>Hierarchy</title>
-    <tree>
-% for class_ in formatter.get_class_hierarchy(node):
-      <item>
-        <code>${class_.namespace.name}.${class_.name}</code>
-% endfor
-% for class_ in formatter.get_class_hierarchy(node):
-      </item>
-% endfor
-    </tree>
+    ${formatter.dump_class_hierarchy (node)}
   </synopsis>
 % elif isinstance(node, ast.Interface):
   <synopsis>

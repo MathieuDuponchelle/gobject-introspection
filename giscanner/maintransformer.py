@@ -69,6 +69,10 @@ class MainTransformer(object):
         # Read in most annotations now.
         self._namespace.walk(self._pass_read_annotations)
 
+        # Now that we have associated doc SECTIONs to classes,
+        # add the unused section blocks as standalone nodes.
+        self._add_standalone_doc_sections()
+
         # Now that we've possibly seen more types from annotations,
         # do another type resolution pass.
         self._namespace.walk(self._pass_type_resolution)
@@ -100,6 +104,13 @@ class MainTransformer(object):
         self._pair_quarks_with_enums()
 
     # Private
+
+    def _add_standalone_doc_sections(self):
+        for block_name, block in self._blocks.iteritems():
+            if block_name.startswith("SECTION:") and block.description:
+                node = ast.DocSection(block_name[8:])
+                node.doc = block.description
+                self._namespace.append(node)
 
     def _pass_fixup_hidden_fields(self, node, chain):
         """Hide all callbacks starting with _; the typical
@@ -228,9 +239,10 @@ class MainTransformer(object):
                 self._apply_annotations_field(node, block, field)
             name = self._get_annotation_name(node)
             section_name = 'SECTION:%s' % (name.lower(), )
-            block = self._blocks.get(section_name)
-            if block and block.description:
-                node.doc = block.description
+            if section_name in self._blocks:
+                block = self._blocks.pop(section_name)
+                if block.description:
+                    node.doc = block.description
         if isinstance(node, (ast.Class, ast.Interface)):
             for prop in node.properties:
                 self._apply_annotations_property(node, prop)
@@ -386,10 +398,14 @@ class MainTransformer(object):
         array_options = annotations.get(ANN_ARRAY)
         container_type = ast.Array(array_type, element_type_node, ctype=node.type.ctype,
                                    is_const=node.type.is_const)
-        if OPT_ARRAY_ZERO_TERMINATED in array_options:
-            container_type.zeroterminated = array_options.get(OPT_ARRAY_ZERO_TERMINATED) == '1'
-        else:
+        if array_options.get(OPT_ARRAY_ZERO_TERMINATED, '0') == '0':
             container_type.zeroterminated = False
+        else:
+            if (OPT_ARRAY_ZERO_TERMINATED in array_options
+            or array_options.get(OPT_ARRAY_ZERO_TERMINATED) == '1'):
+                container_type.zeroterminated = True
+            else:
+                container_type.zeroterminated = False
 
         length = array_options.get(OPT_ARRAY_LENGTH)
         if length:
@@ -616,7 +632,7 @@ class MainTransformer(object):
         if block is None:
             return
 
-        if block.description:
+        if block.description and not node.doc:
             node.doc = block.description
 
         since_tag = block.tags.get(TAG_SINCE)

@@ -6,6 +6,8 @@
       xmlns:api="http://projectmallard.org/experimental/api/"
       xmlns:ui="http://projectmallard.org/1.0/ui/">
   <info>
+  
+  
     <link xref="Regress.TestObj" group="method" type="guide"/>
     <api:function>
       <api:returns>
@@ -50,14 +52,15 @@ gboolean regress_test_obj_torture_signature_1 (RegressTestObj* obj,
                                                int* z,
                                                const char* foo,
                                                int* q,
-                                               guint m);
+                                               guint m,
+                                               GError **error);
   </code></synopsis>
-  <p>This function throws an error if m is odd.</p>
+<p>This function throws an error if m is odd.</p>
 
 <terms>
 <item>
 <title><code>obj</code></title>
-  <p>A <link xref="Regress.TestObj"/></p>
+<p>A <link xref="Regress.TestObj"/></p>
 </item>
 <item>
 <title><code>x</code></title>

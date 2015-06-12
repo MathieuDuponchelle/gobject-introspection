@@ -6,7 +6,9 @@
       xmlns="http://projectmallard.org/1.0/"
       xmlns:api="http://projectmallard.org/experimental/api/"
       xmlns:ui="http://projectmallard.org/1.0/ui/">
-  <info><%block name="info">
+  <info>
+  ${formatter.link_next_doc(node)}
+  <%block name="info">
     ${formatter.format_xref(node.parent, type="guide", group=page_kind)}
 </%block>\
   </info>

@@ -26,10 +26,36 @@ import re
 import tempfile
 
 from xml.sax import saxutils
+from xml.etree import ElementTree as ET
 from mako.lookup import TemplateLookup
 
+from . import message
 from . import ast, xmlwriter
-from .utils import to_underscores
+from .utils import to_underscores, indent
+
+# Freely inspired from
+# https://github.com/GNOME/yelp-xsl/blob/master/js/syntax.html
+language_mimes = {
+    "bash-script": "application/x-shellscript",
+    "shell": "application/x-shellscript",
+    "csharp": "text/x-csharp",
+    "css": "text/css",
+    "diff": "text/xpatch",
+    "html": "text/html",
+    "java": "text/x-java",
+    "javascript": "application/javascript",
+    "lisp": "text/x-scheme",
+    "lua": "text-x-lua",
+    "c": "text/x-csrc",
+    "c++": "text/x-c++src",
+    "pascal": "text/x-pascal",
+    "perl": "application/x-perl",
+    "php": "application/x-php",
+    "python": "text/x-python",
+    "ruby": "application/x-ruby",
+    "sql": "text/x-sql",
+    "yaml": "application/x-yaml",
+}
 
 
 def make_page_id(node, recursive=False):
@@ -56,6 +82,48 @@ def make_page_id(node, recursive=False):
         return '%s.%s' % (make_page_id(parent, recursive=True), node.shadows)
     else:
         return '%s.%s' % (make_page_id(parent, recursive=True), node.name)
+
+
+def make_gtkdoc_id(node, separator=None, formatter=None):
+    def class_style(name):
+        return name
+
+    def function_style(name):
+        snake_case = re.sub('(.)([A-Z][a-z]+)', r'\1_\2',
+                name)
+        snake_case = re.sub('([a-z0-9])([A-Z])', r'\1_\2', snake_case).lower()
+        return snake_case.replace("_", "-")
+
+    if separator is None:
+        separator = "-"
+        formatter = function_style
+        if isinstance(node, (ast.Class, ast.Enum, ast.Record, ast.Interface,
+                             ast.Callback, ast.Alias)):
+            separator = ""
+            formatter = class_style
+
+    if isinstance(node, ast.Namespace):
+        return formatter(node.identifier_prefixes[0])
+
+    if hasattr(node, '_chain') and node._chain:
+        parent = node._chain[-1]
+    else:
+        parent = getattr(node, 'parent', None)
+
+    if parent is None:
+        if isinstance(node, ast.Function) and node.shadows:
+            return '%s%s%s' % (formatter(node.namespace.name), separator,
+                    formatter(node.shadows))
+        else:
+            return '%s%s%s' % (formatter(node.namespace.name), separator,
+                    formatter(node.name))
+
+    if isinstance(node, ast.Function) and node.shadows:
+        return '%s%s%s' % (make_gtkdoc_id(parent, separator=separator,
+            formatter=formatter), separator, formatter(node.shadows))
+    else:
+        return '%s%s%s' % (make_gtkdoc_id(parent, separator=separator,
+            formatter=formatter), separator, formatter(node.name))
 
 
 def get_node_kind(node):
@@ -86,6 +154,8 @@ def get_node_kind(node):
         node_kind = 'callback'
     elif isinstance(node, ast.Field):
         node_kind = 'field'
+    elif isinstance(node, ast.DocSection):
+        node_kind = 'docsection'
     else:
         node_kind = 'default'
 
@@ -161,21 +231,140 @@ class DocstringScanner(TemplatedScanner):
         specs = [
             ('!alpha', r'[a-zA-Z0-9_]+'),
             ('!alpha_dash', r'[a-zA-Z0-9_-]+'),
+            ('!anything', r'.*'),
+            ('note', r'\n+\>\s*<<note_contents:anything>>\s*\n'),
+            ('new_paragraph', r'\n\n'),
+            ('new_line', r'\n'),
+            ('code_start_with_language',
+                r'\|\[\<!\-\-\s*language\s*\=\s*\"<<language_name:alpha>>\"\s*\-\-\>'),
+            ('code_start', r'\|\['),
+            ('code_end', r'\]\|'),
             ('property', r'#<<type_name:alpha>>:(<<property_name:alpha_dash>>)'),
             ('signal', r'#<<type_name:alpha>>::(<<signal_name:alpha_dash>>)'),
             ('type_name', r'#(<<type_name:alpha>>)'),
             ('enum_value', r'%(<<member_name:alpha>>)'),
             ('parameter', r'@<<param_name:alpha>>'),
             ('function_call', r'<<symbol_name:alpha>>\(\)'),
+            ('include', r'{{\s*<<include_name:anything>>\s*}}'),
+            ('heading', r'#+\s+<<heading:anything>>'),
         ]
 
         super(DocstringScanner, self).__init__(specs)
 
 
+class HierarchyClass:
+
+    def __init__(self, name, node=None):
+        self.parents = []
+        self.children = []
+        self.name = name
+        self.node = node
+
+    def add_parent(self, parent):
+        self.parents.append(parent)
+        parent.add_child(self)
+
+    def add_child(self, child):
+        self.children.append(child)
+
+
+class Section:
+
+    def __init__(self, name, node, global_table):
+        self.subsections = {}
+        self.symbols = {}
+        self.name = name
+        self.next_section = None
+        prev_node = None
+        for n in node.find("SYMBOLS"):
+            title = n.text
+            symbol = Symbol(title)
+            if prev_node:
+                prev_node.set_next(symbol)
+            self.symbols[title] = symbol
+            prev_node = symbol
+            global_table[title] = symbol
+
+    def set_next(self, section):
+        self.next_section = section
+
+
+class Symbol:
+
+    def __init__(self, name):
+        self.name = name
+        self.next_ = None
+
+    def set_next(self, symbol):
+        self.next_ = symbol
+
+
 class DocFormatter(object):
-    def __init__(self, transformer):
+    def __init__(self, transformer, markdown_include_paths, link_to_gtk_doc,
+            online, resolve_implicit_links, sections_file):
+        self.online = online
+        self.link_to_gtk_doc = link_to_gtk_doc
+        self.resolve_implicit_links = resolve_implicit_links
         self._transformer = transformer
         self._scanner = DocstringScanner()
+        self.global_symbols_table = {}
+        self.sections = self._parse_sections_file(sections_file)
+
+        # If we are processing a code block as defined by
+        # https://wiki.gnome.org/Projects/GTK%2B/DocumentationSyntax/Markdown
+        # we won't insert paragraphs and will respect new lines.
+        self._processing_code = False
+        # Support including text files through "{{ }}" blocks
+        self._include_directories = markdown_include_paths
+        # Support external references
+        self._reference_map = dict({})
+        self._fill_reference_map(online)
+        # Avoid warning multiple times for external links we're not sure about
+        self._warned_external_references = []
+        # Support Headings
+        self._opened_sections = 0
+
+    def _parse_sections_file(self, sections_file):
+        if not sections_file:
+            return None
+        sections = {}
+        tree = ET.parse(sections_file)
+        root = tree.getroot()
+        previous_section = None
+        for n in root:
+            title = n.find("TITLE").text
+            section = Section(title, n, self.global_symbols_table)
+            sections[title] = section
+            if previous_section:
+                previous_section.set_next(section)
+            previous_section = section
+        return sections
+
+    def _fill_reference_map(self, online):
+        if not os.path.exists(os.path.join(DATADIR, "gtk-doc", "html")):
+            return
+
+        for node in os.listdir(os.path.join(DATADIR, "gtk-doc", "html")):
+            dir_ = os.path.join(DATADIR, "gtk-doc/html", node)
+            if os.path.isdir(dir_):
+                try:
+                    online_reference, symbol_map = self._parse_sgml_index(dir_)
+                    self._reference_map[node] = (dir_, online_reference,
+                            symbol_map)
+                except IOError:
+                    online_reference = None
+
+    def _parse_sgml_index(self, dir_):
+        online_reference = None
+        symbol_map = dict({})
+        with open(os.path.join(dir_, "index.sgml"), 'r') as f:
+            for l in f:
+                if l.startswith("<ONLINE"):
+                    online_reference = l.split('"')[1]
+                elif l.startswith("<ANCHOR"):
+                    split_line = l.split('"')
+                    symbol_map[split_line[1]] = split_line[3]
+        return online_reference, symbol_map
 
     def escape(self, text):
         return saxutils.escape(text)
@@ -198,11 +387,65 @@ class DocFormatter(object):
         if doc is None:
             return ''
 
-        result = ''
-        for para in doc.split('\n\n'):
-            result += '  <p>'
-            result += self.format_inline(node, para)
+        result = ""
+        processing_code = self._processing_code
+
+        if not processing_code:
+            result += '<p>'
+        result += self.format_inline(node, doc)
+        if not processing_code:
             result += '</p>'
+
+        while self._opened_sections > 0:
+            result += "</section>"
+            self._opened_sections -= 1
+        return result
+
+    def format_xref_from_identifier(self, identifier):
+        result = ""
+        node = self._resolve_symbol(identifier)
+
+        if not node:
+            node = self._resolve_type(identifier)
+
+        if node:
+            result = make_page_id(node)
+        return result
+
+    def link_next_doc(self, node):
+        result = ""
+        if isinstance(node, ast.Function):
+            try:
+                symbol = self.global_symbols_table[node.symbol]
+                next_symbol = symbol.next_
+                if symbol.next_:
+                    result = '<link xref="'
+                    result += self.format_xref_from_identifier(symbol.next_.name)
+                    result += '" type="next"/>'
+            except KeyError:  # Class functions
+                pass
+        elif self.sections:
+            if isinstance(node, (ast.Class, ast.Interface)):
+                try:
+                    section = self.sections[node.gtype_name]
+                    next_section = section.next_section
+                    if next_section:
+                        result = '<link xref="'
+                        result += self.format_xref_from_identifier(next_section.name)
+                        result += '" type="next"/>'
+                except KeyError:
+                    pass
+            elif isinstance(node, (ast.DocSection)):
+                try:
+                    section = self.sections[node.name]
+                    next_section = section.next_section
+                    if next_section:
+                        result = '<link xref="'
+                        result += self.format_xref_from_identifier(next_section.name)
+                        result += '" type="next"/>'
+                except KeyError:
+                    pass
+
         return result
 
     def _resolve_type(self, ident):
@@ -210,10 +453,12 @@ class DocFormatter(object):
             matches = self._transformer.split_ctype_namespaces(ident)
         except ValueError:
             return None
+
         for namespace, name in matches:
             node = namespace.get(name)
             if node:
                 return node
+
         return None
 
     def _resolve_symbol(self, symbol):
@@ -225,6 +470,12 @@ class DocFormatter(object):
             node = namespace.get_by_symbol(symbol)
             if node:
                 return node
+
+        if not node:
+            for namespace, name in matches:
+                node = namespace.get(name)
+                if node:
+                    return node
         return None
 
     def _find_thing(self, list_, name):
@@ -233,8 +484,30 @@ class DocFormatter(object):
                 return item
         raise KeyError("Could not find %s" % (name, ))
 
+    def _resolve_implicit_links(self, match):
+        match = self.escape(match)
+        if not self.resolve_implicit_links:
+            return match
+
+        implicit_links = dict({})
+        s = re.split(" |\(|\)", match)
+
+        for word in s:
+            if not word:
+                continue
+            type_ = self._resolve_type(word)
+            symbol = self._resolve_symbol(word)
+            if type_:
+                implicit_links[word] = self.format_xref(type_, linkname=word)
+            elif symbol:
+                implicit_links[word] = self.format_xref(symbol, linkname=word)
+
+        for word, xref in implicit_links.iteritems():
+            match = match.replace(word, xref)
+        return match
+
     def _process_other(self, node, match, props):
-        return self.escape(match)
+        return self._resolve_implicit_links(match)
 
     def _process_property(self, node, match, props):
         type_node = self._resolve_type(props['type_name'])
@@ -246,7 +519,7 @@ class DocFormatter(object):
         except (AttributeError, KeyError):
             return match
 
-        return self.format_xref(prop)
+        return self.format_xref(prop, linkname=props['property_name'])
 
     def _process_signal(self, node, match, props):
         type_node = self._resolve_type(props['type_name'])
@@ -261,11 +534,17 @@ class DocFormatter(object):
         return self.format_xref(signal)
 
     def _process_type_name(self, node, match, props):
-        type_ = self._resolve_type(props['type_name'])
+        ident = props['type_name']
+        type_ = self._resolve_type(ident)
+        plural = False
         if type_ is None:
-            return match
+            singularized = ident.rstrip("s")  # Try to remove plural
+            type_ = self._resolve_type(singularized)
+            plural = True
+            if type_ is None:
+                return match
 
-        return self.format_xref(type_)
+        return self.format_xref(type_, pluralize=plural)
 
     def _process_enum_value(self, node, match, props):
         member_name = props['member_name']
@@ -296,6 +575,82 @@ class DocFormatter(object):
 
         return self.format_xref(func)
 
+    def _process_code_start(self, node, match, props):
+        self._processing_code = True
+        return "</p><code>"
+
+    def _process_code_start_with_language(self, node, match, props):
+        mime = language_mimes[props["language_name"].lower()]
+        self._processing_code = True
+        if not mime:
+            return "</p><code>"
+        return '</p><code mime="' + mime + '">'
+
+    def _process_code_end(self, node, match, props):
+        self._processing_code = False
+        return "</code><p>"
+
+    def _process_new_line(self, node, match, props):
+        return '\n'
+
+    def _process_new_paragraph(self, node, match, props):
+        if self._processing_code:
+            return '\n\n'
+        return "</p><p>"
+
+    def _process_include(self, node, match, props):
+        filename = props["include_name"].strip()
+        f = None
+
+        try:
+            f = open(filename, 'r')
+        except IOError:
+            for dir_ in self._include_directories:
+                try:
+                    f = open(os.path.join(dir_, filename), 'r')
+                    break
+                except:
+                    continue
+        if f:
+            contents = f.read()
+            if self._processing_code:
+                result = self._resolve_implicit_links(contents)
+            else:
+                result = self.format_inline(node, contents)
+            f.close()
+        else:
+            message.warn("Could not find file %s" % (props["include_name"], ))
+            result = match
+
+        return result
+
+    def _process_note(self, node, match, props):
+        if self._processing_code:
+            return match
+        return "</p><note><p>" + props["note_contents"] + "</p></note><p>"
+
+    def _process_heading(self, node, match, props):
+        if self._processing_code:
+            return match
+
+        result = ""
+        match = match.strip("\n")
+        header_level = 0
+        while match[header_level] == "#":
+            header_level += 1
+
+        result += "</p>"
+        while self._opened_sections >= header_level:
+            result += "</section>"
+            self._opened_sections -= 1
+
+        while self._opened_sections < header_level:
+            result += "<section>"
+            self._opened_sections += 1
+
+        result += "<title>" + props["heading"] + "</title><p>"
+        return result
+
     def _process_token(self, node, tok):
         kind, match, props = tok
 
@@ -307,6 +662,14 @@ class DocFormatter(object):
             'enum_value': self._process_enum_value,
             'parameter': self._process_parameter,
             'function_call': self._process_function_call,
+            'code_start': self._process_code_start,
+            'code_start_with_language': self._process_code_start_with_language,
+            'code_end': self._process_code_end,
+            'new_line': self._process_new_line,
+            'new_paragraph': self._process_new_paragraph,
+            'include': self._process_include,
+            'note': self._process_note,
+            'heading': self._process_heading,
         }
 
         return dispatch[kind](node, match, props)
@@ -347,28 +710,100 @@ class DocFormatter(object):
         else:
             return make_page_id(node)
 
-    def format_xref(self, node, **attrdict):
+    def format_xref(self, node, pluralize=False, linkname=None, **attrdict):
         if node is None or not hasattr(node, 'namespace'):
             attrs = [('xref', 'index')] + attrdict.items()
-            return xmlwriter.build_xml_tag('link', attrs)
-        elif isinstance(node, ast.Member):
-            # Enum/BitField members are linked to the main enum page.
-            return self.format_xref(node.parent, **attrdict) + '.' + node.name
+            return xmlwriter.build_xml_tag('link', attrs, linkname)
+        elif isinstance(node, ast.Member) and (self.link_to_gtk_doc is False or
+                node.namespace is self._transformer.namespace):
+            # Enum/BitField members are linked to the main enum page, except
+            # when linking to gtk doc external references
+            return self.format_xref(node.parent, linkname=linkname,
+                    pluralize=pluralize, **attrdict) + '.' + node.name
         elif node.namespace is self._transformer.namespace:
-            return self.format_internal_xref(node, attrdict)
+            return self.format_internal_xref(node, attrdict,
+                    linkname=linkname, pluralize=pluralize)
         else:
-            return self.format_external_xref(node, attrdict)
+            return self.format_external_xref(node, attrdict,
+                    linkname=linkname, pluralize=pluralize)
 
-    def format_internal_xref(self, node, attrdict):
+    def format_internal_xref(self, node, attrdict, linkname=None, pluralize=False):
         attrs = [('xref', make_page_id(node))] + attrdict.items()
-        return xmlwriter.build_xml_tag('link', attrs)
+        if linkname:
+            return xmlwriter.build_xml_tag('link', attrs, linkname)
+        elif not pluralize:
+            return xmlwriter.build_xml_tag('link', attrs)
+        else:
+            return xmlwriter.build_xml_tag('link', attrs, make_page_id(node) +
+            "s")
 
-    def format_external_xref(self, node, attrdict):
+    def _find_reference(self, ns):
+        for package in ns.exported_packages:
+            try:
+                reference = self._reference_map[package]
+                return (reference, True)
+            except KeyError:
+                package = re.sub(r'\-[0-9]+\.[0-9]+$', '', package)
+                try:
+                    reference = self._reference_map[package]
+                    return (reference, False)
+                except KeyError:
+                    continue
+
+        return ((None, None), False)
+
+    def format_gtk_doc_attributes(self, node, attrdict):
         ns = node.namespace
-        attrs = [('href', '../%s-%s/%s.html' % (ns.name, str(ns.version),
-                                                make_page_id(node)))]
+        attrs = [('href', 'FIXME broken link to %s' % (node.name, ))]
+        ref, exact = self._find_reference(ns)
+
+        if not ref[0] and ns.name not in self._warned_external_references:
+            message.warn("No reference found for %s" % (ns.name + ns.version, ))
+            self._warned_external_references.append(ns.name)
+        elif self.online and not ref[1] and \
+                ns.name not in self._warned_external_references:
+            message.warn("No online reference found for %s" % (ns.name +
+                ns.version, ))
+            self._warned_external_references.append(ns.name)
+        elif not exact and ns.name not in self._warned_external_references:
+            message.warn("Using an approximate match for reference %s:%s" %
+                    (ns.name + ns.version, ref[0]))
+            self._warned_external_references.append(ns.name)
+
+        reference = None
+        if ref[0]:
+            gtk_doc_identifier = make_gtkdoc_id(node)
+            if isinstance(node, (ast.Constant, ast.Member)):
+                gtk_doc_identifier = gtk_doc_identifier.upper() + ":CAPS"
+            try:
+                reference = ref[2][gtk_doc_identifier]
+                reference = reference.split("/", 1)[1]
+            except KeyError:
+                pass
+
+        if self.online and reference:
+            attrs = [('href', '%s/%s' % (ref[1], reference))]
+        elif reference:
+            attrs = [('href', os.path.join(ref[0], reference))]
+
+        return attrs
+
+    def format_external_xref(self, node, attrdict, linkname=None, pluralize=False):
+        ns = node.namespace
+
+        if self.link_to_gtk_doc:
+            attrs = self.format_gtk_doc_attributes(node, attrdict)
+        else:
+            attrs = [('href', '../%s-%s/%s.html' % (ns.name, str(ns.version),
+                                                    make_page_id(node)))]
         attrs += attrdict.items()
-        return xmlwriter.build_xml_tag('link', attrs, self.format_page_name(node))
+        if linkname:
+            return xmlwriter.build_xml_tag('link', attrs, linkname)
+        elif not pluralize:
+            return xmlwriter.build_xml_tag('link', attrs, self.format_page_name(node))
+        else:
+            return xmlwriter.build_xml_tag('link', attrs,
+                    self.format_page_name(node) + "s")
 
     def field_is_writable(self, field):
         return True
@@ -406,16 +841,73 @@ class DocFormatter(object):
     def to_lower_camel_case(self, string):
         return string[0].lower() + string[1:]
 
-    def get_class_hierarchy(self, node):
-        assert isinstance(node, ast.Class)
+    def add_parent_class(self, parent_type, child_class, classes, is_interface=False):
+        parent = self._transformer.lookup_typenode(parent_type)
+        parent_name = "%s.%s" % (parent.namespace.name, parent.name)
+        try:
+            parent_class = classes[parent_name]
+        except KeyError:
+            parent_class = HierarchyClass(parent_name, parent)
+        child_class.add_parent(parent_class)
+        if not is_interface:
+            self.create_hierarchy_classes(parent, parent_class, classes)
+        else:
+            # Interfaces don't explicitly inherit from GInterface.
+            try:
+                parent_interface = classes["GObject.GInterface"]
+            except KeyError:
+                parent_interface = HierarchyClass("GObject.GInterface")
+                classes["GObject.GInterface"] = parent_interface
+            parent_class.add_parent(parent_interface)
 
-        parent_chain = [node]
-        while node.parent_type:
-            node = self._transformer.lookup_typenode(node.parent_type)
-            parent_chain.append(node)
+    def create_hierarchy_classes(self, node, child_class, classes):
+        name = "%s.%s" % (node.namespace.name, node.name)
+        classes[name] = child_class
+        parent = None
+        if node.parent_type:
+            parent = self._transformer.lookup_typenode(node.parent_type)
+            self.add_parent_class(node.parent_type, child_class, classes)
+        if hasattr(node, "interfaces"):
+            for interface in node.interfaces:
+                if not parent or interface not in parent.interfaces:
+                    self.add_parent_class(interface, child_class, classes,
+                            is_interface=True)
+        return classes
 
-        parent_chain.reverse()
-        return parent_chain
+    def dump_tree(self, klass, xml_string):
+        xml_string += "<item>"
+        xml_string += self.format_xref(klass.node, linkname=klass.name)
+        for n in klass.children:
+            xml_string = self.dump_tree(n, xml_string)
+        xml_string += "</item>"
+        return xml_string
+
+    def get_leaves(self, klass, leaves):
+        if not klass.parents:
+            leaves.add(klass)
+        for parent in klass.parents:
+            self.get_leaves(parent, leaves)
+        return leaves
+
+    def dump_class(self, klass):
+        leaves = self.get_leaves(klass, leaves=set({}))
+        # Needed because the tests are really dumb and use diff :/
+        leaves = sorted(leaves, key=lambda leave: getattr(leave, "name"))
+        xml_string = "<tree>"
+        while leaves:
+            klass = leaves.pop()
+            xml_string = self.dump_tree(klass, xml_string)
+        xml_string += "</tree>"
+        return xml_string
+
+    def dump_class_hierarchy(self, node):
+        name = "%s.%s" % (node.namespace.name, node.name)
+        child_class = HierarchyClass(name, node)
+        classes = self.create_hierarchy_classes(node, child_class, dict({}))
+        xml_string = self.dump_class(child_class)
+        root = ET.fromstring(xml_string)
+        indent(root, level=2)
+        return ET.tostring(root)
 
     def format_prerequisites(self, node):
         assert isinstance(node, ast.Interface)
@@ -881,7 +1373,9 @@ LANGUAGES = {
 
 
 class DocWriter(object):
-    def __init__(self, transformer, language):
+    def __init__(self, transformer, language, markdown_include_paths,
+            online=False, link_to_gtk_doc=False, resolve_implicit_links=False,
+            sections_file=None):
         self._transformer = transformer
 
         try:
@@ -889,7 +1383,11 @@ class DocWriter(object):
         except KeyError:
             raise SystemExit("Unsupported language: %s" % (language, ))
 
-        self._formatter = formatter_class(self._transformer)
+        self._formatter = formatter_class(self._transformer,
+                markdown_include_paths, online=online,
+                link_to_gtk_doc=link_to_gtk_doc,
+                resolve_implicit_links=resolve_implicit_links,
+                sections_file=sections_file)
         self._language = self._formatter.language
 
         self._lookup = self._get_template_lookup()

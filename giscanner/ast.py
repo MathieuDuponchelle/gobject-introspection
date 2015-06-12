@@ -112,12 +112,6 @@ in contrast to the other create_type() functions."""
             return Array(None, bare_utf8, ctype=None, gtype_name=gtype_name,
                          is_const=False)
 
-        # Workaround for Gdk.Rectangle being boxed alias for
-        # cairo.RectangleInt.  G-I does not support boxing of aliases.
-        # See https://bugzilla.gnome.org/show_bug.cgi?id=655423
-        if gtype_name == 'GdkRectangle':
-            gtype_name = 'CairoRectangleInt'
-
         return cls(gtype_name=gtype_name)
 
     def get_giname(self):
@@ -284,6 +278,8 @@ type_names['int32_t'] = TYPE_INT32
 type_names['uint32_t'] = TYPE_UINT32
 type_names['int64_t'] = TYPE_INT64
 type_names['uint64_t'] = TYPE_UINT64
+# C99 stdbool
+type_names['bool'] = TYPE_BOOLEAN
 
 # A few additional GLib type aliases
 type_names['guchar'] = TYPE_UINT8
@@ -589,6 +585,11 @@ GIName.  It's possible for nodes to contain or point to other nodes."""
 
     def _walk(self, callback, chain):
         pass
+
+
+class DocSection(Node):
+    def __init__(self, name=None):
+        Node.__init__(self, name)
 
 
 class Registered:

@@ -6,6 +6,8 @@
       xmlns:api="http://projectmallard.org/experimental/api/"
       xmlns:ui="http://projectmallard.org/1.0/ui/">
   <info>
+  
+  
     <link xref="index" group="function" type="guide"/>
     <api:function>
       <api:returns>
@@ -42,10 +44,11 @@
   <synopsis><code mime="text/x-python">
 @accepts(int, float, int, unicode, int, int)
 @returns(bool)
+@throws(GLib.Error)
 def test_torture_signature_1(x, y, z, foo, q, m):
     # Python wrapper for regress_test_torture_signature_1()
   </code></synopsis>
-  <p>This function throws an error if m is odd.</p>
+<p>This function throws an error if m is odd.</p>
 
 <terms>
 <item>

@@ -1527,7 +1527,28 @@
  *
  * Emitted when @file has been changed.
  *
- * If using #G_FILE_MONITOR_SEND_MOVED flag and @event_type is
+ * If using %G_FILE_MONITOR_WATCH_RENAMES on a directory monitor, and
+ * the information is available (and if supported by the backend),
+ * @event_type may be %G_FILE_MONITOR_EVENT_RENAMED,
+ * %G_FILE_MONITOR_EVENT_MOVED_IN or %G_FILE_MONITOR_EVENT_MOVED_OUT.
+ *
+ * In all cases @file will be a child of the monitored directory.  For
+ * renames, @file will be the old name and @other_file is the new
+ * name.  For "moved in" events, @file is the name of the file that
+ * appeared and @other_file is the old name that it was moved from (in
+ * another directory).  For "moved out" events, @file is the name of
+ * the file that used to be in this directory and @other_file is the
+ * name of the file at its new location.
+ *
+ * It makes sense to treat %G_FILE_MONITOR_EVENT_MOVED_IN as
+ * equivalent to %G_FILE_MONITOR_EVENT_CREATED and
+ * %G_FILE_MONITOR_EVENT_MOVED_OUT as equivalent to
+ * %G_FILE_MONITOR_EVENT_DELETED, with extra information.
+ * %G_FILE_MONITOR_EVENT_RENAMED is equivalent to a delete/create
+ * pair.  This is exactly how the events will be reported in the case
+ * that the %G_FILE_MONITOR_WATCH_RENAMES flag is not in use.
+ *
+ * If using the deprecated flag %G_FILE_MONITOR_SEND_MOVED flag and @event_type is
  * #G_FILE_MONITOR_EVENT_MOVED, @file will be set to a #GFile containing the
  * old path, and @other_file will be set to a #GFile containing the new path.
  *
@@ -2925,6 +2946,21 @@
 
 
 /**
+ * GSocketListener::event:
+ * @listener: the #GSocketListener
+ * @event: the event that is occurring
+ * @socket: the #GSocket the event is occurring on
+ *
+ * Emitted when @listener's activity on @socket changes state.
+ * Note that when @listener is used to listen on both IPv4 and
+ * IPv6, a separate set of signals will be emitted for each, and
+ * the order they happen in is undefined.
+ *
+ * Since: 2.46
+ */
+
+
+/**
  * GSocketService::incoming:
  * @service: the #GSocketService
  * @connection: a new #GSocketConnection object
@@ -2964,6 +3000,23 @@
  *
  * The opaque object representing a synchronous or asynchronous task
  * and its result.
+ */
+
+
+/**
+ * GTask:completed:
+ *
+ * Whether the task has completed, meaning its callback (if set) has been
+ * invoked. This can only happen after g_task_return_pointer(),
+ * g_task_return_error() or one of the other return functions have been called
+ * on the task.
+ *
+ * This property is guaranteed to change from %FALSE to %TRUE exactly once.
+ *
+ * The #GObject::notify signal for this change is emitted in the same main
+ * context as the task’s callback, immediately after that callback is invoked.
+ *
+ * Since: 2.44
  */
 
 
@@ -5489,9 +5542,15 @@
  * the operation, producing a GAsyncResult which is then passed to the
  * function's matching _finish() operation.
  *
- * Some #GFile operations do not have synchronous analogs, as they may
- * take a very long time to finish, and blocking may leave an application
- * unusable. Notable cases include:
+ * It is highly recommended to use asynchronous calls when running within a
+ * shared main loop, such as in the main thread of an application. This avoids
+ * I/O operations blocking other sources on the main loop from being dispatched.
+ * Synchronous I/O operations should be performed from worker threads. See the
+ * [introduction to asynchronous programming section][async-programming] for
+ * more.
+ *
+ * Some #GFile operations almost always take a noticeable amount of time, and
+ * so do not have synchronous analogs. Notable cases include:
  * - g_file_mount_mountable() to mount a mountable file.
  * - g_file_unmount_mountable_with_operation() to unmount a mountable file.
  * - g_file_eject_mountable_with_operation() to eject a mountable file.
@@ -6684,7 +6743,7 @@
  *
  * Applications and libraries often contain binary or textual data that is
  * really part of the application, rather than user data. For instance
- * #GtkBuilder .ui files, splashscreen images, GMenu markup xml, CSS files,
+ * #GtkBuilder .ui files, splashscreen images, GMenu markup XML, CSS files,
  * icons, etc. These are often shipped as files in `$datadir/appname`, or
  * manually included as literal strings in the code.
  *
@@ -6705,7 +6764,7 @@
  * The only options currently supported are:
  *
  * `xml-stripblanks` which will use the xmllint command
- * to strip ignorable whitespace from the xml file. For this to work,
+ * to strip ignorable whitespace from the XML file. For this to work,
  * the `XMLLINT` environment variable must be set to the full path to
  * the xmllint executable, or xmllint must be in the `PATH`; otherwise
  * the preprocessing step is skipped.
@@ -6718,7 +6777,7 @@
  * abort.
  *
  * Resource bundles are created by the [glib-compile-resources][glib-compile-resources] program
- * which takes an xml file that describes the bundle, and a set of files that the xml references. These
+ * which takes an XML file that describes the bundle, and a set of files that the XML references. These
  * are combined into a binary resource bundle.
  *
  * An example resource description:
@@ -6740,23 +6799,29 @@
  * /org/gtk/Example/menumarkup.xml
  * ]|
  *
- * Note that all resources in the process share the same namespace, so use java-style
+ * Note that all resources in the process share the same namespace, so use Java-style
  * path prefixes (like in the above example) to avoid conflicts.
  *
- * You can then use [glib-compile-resources][glib-compile-resources] to compile the xml to a
+ * You can then use [glib-compile-resources][glib-compile-resources] to compile the XML to a
  * binary bundle that you can load with g_resource_load(). However, its more common to use the --generate-source and
  * --generate-header arguments to create a source file and header to link directly into your application.
+ * This will generate `get_resource()`, `register_resource()` and
+ * `unregister_resource()` functions, prefixed by the `--c-name` argument passed
+ * to [glib-compile-resources][glib-compile-resources]. `get_resource()` returns
+ * the generated #GResource object. The register and unregister functions
+ * register the resource so its files can be accessed using
+ * g_resources_lookup_data().
  *
  * Once a #GResource has been created and registered all the data in it can be accessed globally in the process by
  * using API calls like g_resources_open_stream() to stream the data or g_resources_lookup_data() to get a direct pointer
- * to the data. You can also use uris like "resource:///org/gtk/Example/data/splashscreen.png" with #GFile to access
+ * to the data. You can also use URIs like "resource:///org/gtk/Example/data/splashscreen.png" with #GFile to access
  * the resource data.
  *
  * There are two forms of the generated source, the default version uses the compiler support for constructor
  * and destructor functions (where available) to automatically create and register the #GResource on startup
  * or library load time. If you pass --manual-register two functions to register/unregister the resource is instead
  * created. This requires an explicit initialization call in your application/library, but it works on all platforms,
- * even on the minor ones where this is not available. (Constructor support is available for at least Win32, MacOS and Linux.)
+ * even on the minor ones where this is not available. (Constructor support is available for at least Win32, Mac OS and Linux.)
  *
  * Note that resource data can point directly into the data segment of e.g. a library, so if you are unloading libraries
  * during runtime you need to be very careful with keeping around pointers to data from a resource, as this goes away
@@ -11859,7 +11924,7 @@
 /**
  * g_application_bind_busy_property:
  * @application: a #GApplication
- * @object: a #GObject
+ * @object: (type GObject.Object): a #GObject
  * @property: the name of a boolean property of @object
  *
  * Marks @application as busy (see g_application_mark_busy()) while
@@ -12708,7 +12773,7 @@
 /**
  * g_application_unbind_busy_property:
  * @application: a #GApplication
- * @object: a #GObject
+ * @object: (type GObject.Object): a #GObject
  * @property: the name of a boolean property of @object
  *
  * Destroys a binding between @property and the busy state of
@@ -13544,7 +13609,7 @@
 
 /**
  * g_cancellable_cancel:
- * @cancellable: a #GCancellable object.
+ * @cancellable: (nullable): a #GCancellable object.
  *
  * Will set @cancellable to cancelled, and will emit the
  * #GCancellable::cancelled signal. (However, see the warning about
@@ -13555,7 +13620,9 @@
  * it from a thread other than the one running the operation that was
  * passed the @cancellable.
  *
- * The convention within gio is that cancelling an asynchronous
+ * If @cancellable is %NULL, this function returns immediately for convenience.
+ *
+ * The convention within GIO is that cancelling an asynchronous
  * operation causes it to complete asynchronously. That is, if you
  * cancel the operation from the same thread in which it is running,
  * then the operation's #GAsyncReadyCallback will not be invoked until
@@ -20803,6 +20870,57 @@
 
 
 /**
+ * g_file_enumerator_iterate:
+ * @direnum: an open #GFileEnumerator
+ * @out_info: (out) (transfer none) (allow-none): Output location for the next #GFileInfo, or %NULL
+ * @out_child: (out) (transfer none) (allow-none): Output location for the next #GFile, or %NULL
+ * @cancellable: a #GCancellable
+ * @error: a #GError
+ *
+ * This is a version of g_file_enumerator_next_file() that's easier to
+ * use correctly from C programs.  With g_file_enumerator_next_file(),
+ * the gboolean return value signifies "end of iteration or error", which
+ * requires allocation of a temporary #GError.
+ *
+ * In contrast, with this function, a %FALSE return from
+ * gs_file_enumerator_iterate() *always* means
+ * "error".  End of iteration is signaled by @out_info or @out_child being %NULL.
+ *
+ * Another crucial difference is that the references for @out_info and
+ * @out_child are owned by @direnum (they are cached as hidden
+ * properties).  You must not unref them in your own code.  This makes
+ * memory management significantly easier for C code in combination
+ * with loops.
+ *
+ * Finally, this function optionally allows retrieving a #GFile as
+ * well.
+ *
+ * You must specify at least one of @out_info or @out_child.
+ *
+ * The code pattern for correctly using g_file_enumerator_iterate() from C
+ * is:
+ *
+ * |[
+ * direnum = g_file_enumerate_children (file, ...);
+ * while (TRUE)
+ *   {
+ *     GFileInfo *info;
+ *     if (!g_file_enumerator_iterate (direnum, &info, NULL, cancellable, error))
+ *       goto out;
+ *     if (!info)
+ *       break;
+ *     ... do stuff with "info"; do not unref it! ...
+ *   }
+ *
+ * out:
+ *   g_object_unref (direnum); // Note: frees the last @info
+ * ]|
+ *
+ * Since: 2.44
+ */
+
+
+/**
  * g_file_enumerator_next_file:
  * @enumerator: a #GFileEnumerator.
  * @cancellable: (allow-none): optional #GCancellable object, %NULL to ignore.
@@ -22391,7 +22509,7 @@
  *
  * Cancels a file monitor.
  *
- * Returns: %TRUE if monitor was cancelled.
+ * Returns: always %TRUE
  */
 
 
@@ -22419,22 +22537,6 @@
  * Returns: (transfer full): a #GFileMonitor for the given @file,
  *     or %NULL on error.
  *     Free the returned object with g_object_unref().
- */
-
-
-/**
- * g_file_monitor_emit_event:
- * @monitor: a #GFileMonitor.
- * @child: a #GFile.
- * @other_file: a #GFile.
- * @event_type: a set of #GFileMonitorEvent flags.
- *
- * Emits the #GFileMonitor::changed signal if a change
- * has taken place. Should be called from file monitor
- * implementations only.
- *
- * The signal will be emitted from an idle handler (in the
- * [thread-default main context][g-main-context-push-thread-default]).
  */
 
 
@@ -25913,7 +26015,7 @@
 /**
  * g_list_store_append:
  * @store: a #GListStore
- * @item: the new item
+ * @item: (type GObject): the new item
  *
  * Appends @item to @store. @item must be of type #GListStore:item-type.
  *
@@ -25930,7 +26032,7 @@
  * g_list_store_insert:
  * @store: a #GListStore
  * @position: the position at which to insert the new item
- * @item: the new item
+ * @item: (type GObject): the new item
  *
  * Inserts @item into @store at @position. @item must be of type
  * #GListStore:item-type or derived from it. @position must be smaller
@@ -25948,7 +26050,9 @@
 /**
  * g_list_store_insert_sorted:
  * @store: a #GListStore
- * @item: the new item
+ * @item: (type GObject): the new item
+ * @compare_func: (scope call): pairwise comparison function for sorting
+ * @user_data: (closure): user data for @compare_func
  *
  * Inserts @item into @store at a position to be determined by the
  * @compare_func.
@@ -26006,7 +26110,7 @@
  * @store: a #GListStore
  * @position: the position at which to make the change
  * @n_removals: the number of items to remove
- * @additions: (array length=n_additions): the items to add
+ * @additions: (array length=n_additions) (element-type GObject): the items to add
  * @n_additions: the number of items to add
  *
  * Changes @store by removing @n_removals items and adding @n_additions
@@ -27923,7 +28027,8 @@
  * is deprecated, because it depends on the contents of /etc/services,
  * which is generally quite sparse on platforms other than Linux.)
  *
- * Returns: (transfer full): the new #GNetworkAddress, or %NULL on error
+ * Returns: (transfer full) (type GNetworkAddress): the new
+ *   #GNetworkAddress, or %NULL on error
  * Since: 2.22
  */
 
@@ -27941,7 +28046,8 @@
  * g_network_address_parse() allows #GSocketClient to determine
  * when to use application-specific proxy protocols.
  *
- * Returns: (transfer full): the new #GNetworkAddress, or %NULL on error
+ * Returns: (transfer full) (type GNetworkAddress): the new
+ *   #GNetworkAddress, or %NULL on error
  * Since: 2.26
  */
 
@@ -29392,7 +29498,8 @@
 /**
  * g_property_action_new:
  * @name: the name of the action to create
- * @object: the object that has the property to wrap
+ * @object: (type GObject.Object): the object that has the property
+ *   to wrap
  * @property_name: the name of the property
  *
  * Creates a #GAction corresponding to the value of property
@@ -30174,14 +30281,6 @@
  *
  * Returns: (transfer full): a new #GResource, or %NULL on error
  * Since: 2.32
- */
-
-
-/**
- * g_resource_new_from_table:
- * @table: (transfer full): a GvdbTable
- *
- * Returns: (transfer full): a new #GResource for @table
  */
 
 
@@ -31904,7 +32003,7 @@
 
 /**
  * g_settings_unbind:
- * @object: the object
+ * @object: (type GObject.Object): the object
  * @property: the property whose binding is removed
  *
  * Removes an existing binding for @property on @object.
@@ -32085,6 +32184,8 @@
  * Reports an error in an asynchronous function in an idle function by
  * directly setting the contents of the #GAsyncResult with the given error
  * information.
+ *
+ * Deprecated: 2.46: Use g_task_report_error().
  */
 
 
@@ -32098,6 +32199,8 @@
  * Reports an error in an idle function. Similar to
  * g_simple_async_report_error_in_idle(), but takes a #GError rather
  * than building a new one.
+ *
+ * Deprecated: 2.46: Use g_task_report_error().
  */
 
 
@@ -32113,6 +32216,7 @@
  * ownership of @error, so the caller does not have to free it any more.
  *
  * Since: 2.28
+ * Deprecated: 2.46: Use g_task_report_error().
  */
 
 
@@ -32127,6 +32231,8 @@
  *
  * Calling this function takes a reference to @simple for as long as
  * is needed to complete the call.
+ *
+ * Deprecated: 2.46: Use #GTask instead.
  */
 
 
@@ -32141,6 +32247,8 @@
  *
  * Calling this function takes a reference to @simple for as long as
  * is needed to complete the call.
+ *
+ * Deprecated: 2.46: Use #GTask instead.
  */
 
 
@@ -32152,6 +32260,7 @@
  *
  * Returns: %TRUE if the operation's result was %TRUE, %FALSE
  *     if the operation's result was %FALSE.
+ * Deprecated: 2.46: Use #GTask and g_task_propagate_boolean() instead.
  */
 
 
@@ -32162,6 +32271,7 @@
  * Gets a pointer result as returned by the asynchronous function.
  *
  * Returns: a pointer from the result.
+ * Deprecated: 2.46: Use #GTask and g_task_propagate_pointer() instead.
  */
 
 
@@ -32172,6 +32282,7 @@
  * Gets a gssize from the asynchronous result.
  *
  * Returns: a gssize returned from the asynchronous function.
+ * Deprecated: 2.46: Use #GTask and g_task_propagate_int() instead.
  */
 
 
@@ -32182,6 +32293,7 @@
  * Gets the source tag for the #GSimpleAsyncResult.
  *
  * Returns: a #gpointer to the source object for the #GSimpleAsyncResult.
+ * Deprecated: 2.46.: Use #GTask and g_task_get_source_tag() instead.
  */
 
 
@@ -32206,6 +32318,7 @@
  *
  * Returns: #TRUE if all checks passed or #FALSE if any failed.
  * Since: 2.20
+ * Deprecated: 2.46: Use #GTask and g_task_is_valid() instead.
  */
 
 
@@ -32228,6 +32341,7 @@
  * this function returns.
  *
  * Returns: a #GSimpleAsyncResult.
+ * Deprecated: 2.46: Use g_task_new() instead.
  */
 
 
@@ -32244,6 +32358,7 @@
  * Creates a new #GSimpleAsyncResult with a set error.
  *
  * Returns: a #GSimpleAsyncResult.
+ * Deprecated: 2.46: Use g_task_new() and g_task_return_new_error() instead.
  */
 
 
@@ -32257,6 +32372,7 @@
  * Creates a #GSimpleAsyncResult from an error condition.
  *
  * Returns: a #GSimpleAsyncResult.
+ * Deprecated: 2.46: Use g_task_new() and g_task_return_error() instead.
  */
 
 
@@ -32272,6 +32388,7 @@
  *
  * Returns: a #GSimpleAsyncResult
  * Since: 2.28
+ * Deprecated: 2.46: Use g_task_new() and g_task_return_error() instead.
  */
 
 
@@ -32288,6 +32405,7 @@
  * function will return %TRUE with @dest set appropriately.
  *
  * Returns: %TRUE if the error was propagated to @dest. %FALSE otherwise.
+ * Deprecated: 2.46: Use #GTask instead.
  */
 
 
@@ -32304,6 +32422,8 @@
  *
  * Calling this function takes a reference to @simple for as long as
  * is needed to run the job and report its completion.
+ *
+ * Deprecated: 2.46: Use #GTask and g_task_run_in_thread() instead.
  */
 
 
@@ -32329,6 +32449,7 @@
  * unrelated g_simple_async_result_set_handle_cancellation() function.
  *
  * Since: 2.32
+ * Deprecated: 2.46: Use #GTask instead.
  */
 
 
@@ -32341,6 +32462,8 @@
  * @...: a list of variables to fill in @format.
  *
  * Sets an error within the asynchronous result without a #GError.
+ *
+ * Deprecated: 2.46: Use #GTask and g_task_return_new_error() instead.
  */
 
 
@@ -32354,6 +32477,8 @@
  *
  * Sets an error within the asynchronous result without a #GError.
  * Unless writing a binding, see g_simple_async_result_set_error().
+ *
+ * Deprecated: 2.46: Use #GTask and g_task_return_error() instead.
  */
 
 
@@ -32363,6 +32488,8 @@
  * @error: #GError.
  *
  * Sets the result from a #GError.
+ *
+ * Deprecated: 2.46: Use #GTask and g_task_return_error() instead.
  */
 
 
@@ -32376,6 +32503,8 @@
  * This function has nothing to do with
  * g_simple_async_result_set_check_cancellable().  It only refers to the
  * #GCancellable passed to g_simple_async_result_run_in_thread().
+ *
+ * Deprecated: 2.46
  */
 
 
@@ -32385,6 +32514,8 @@
  * @op_res: a #gboolean.
  *
  * Sets the operation result to a boolean within the asynchronous result.
+ *
+ * Deprecated: 2.46: Use #GTask and g_task_return_boolean() instead.
  */
 
 
@@ -32395,6 +32526,8 @@
  * @destroy_op_res: a #GDestroyNotify function.
  *
  * Sets the operation result within the asynchronous result to a pointer.
+ *
+ * Deprecated: 2.46: Use #GTask and g_task_return_pointer() instead.
  */
 
 
@@ -32405,6 +32538,8 @@
  *
  * Sets the operation result within the asynchronous result to
  * the given @op_res.
+ *
+ * Deprecated: 2.46: Use #GTask and g_task_return_int() instead.
  */
 
 
@@ -32417,6 +32552,7 @@
  * of @error, so the caller does not need to free it any more.
  *
  * Since: 2.28
+ * Deprecated: 2.46: Use #GTask and g_task_return_error() instead.
  */
 
 
@@ -33586,7 +33722,7 @@
  * This can be useful if you want to do something unusual on it
  * not supported by the #GSocketConnection APIs.
  *
- * Returns: (transfer none): a #GSocketAddress or %NULL on error.
+ * Returns: (transfer none): a #GSocket or %NULL on error.
  * Since: 2.22
  */
 
@@ -34340,6 +34476,9 @@
  * all properties should work. Note that the file descriptor
  * will be set to non-blocking mode, independent on the blocking
  * mode of the #GSocket.
+ *
+ * On success, the returned #GSocket takes ownership of @fd. On failure, the
+ * caller must close @fd themselves.
  *
  * Returns: a #GSocket or %NULL on error.
  *     Free the returned object with g_object_unref().
@@ -35933,6 +36072,19 @@
 
 
 /**
+ * g_task_get_completed:
+ * @task: a #GTask.
+ *
+ * Gets the value of #GTask:completed. This changes from %FALSE to %TRUE after
+ * the task’s callback is invoked, and will return %FALSE if called from inside
+ * the callback.
+ *
+ * Returns: %TRUE if the task has completed, %FALSE otherwise.
+ * Since: 2.44
+ */
+
+
+/**
  * g_task_get_context:
  * @task: a #GTask
  *
@@ -36287,6 +36439,12 @@
  *
  * See #GTaskThreadFunc for more details about how @task_func is handled.
  *
+ * Although GLib currently rate-limits the tasks queued via
+ * g_task_run_in_thread(), you should not assume that it will always
+ * do this. If you have a very large number of tasks to run, but don't
+ * want them to all run at once, you should only queue a limited
+ * number of them at a time.
+ *
  * Since: 2.36
  */
 
@@ -36305,6 +36463,13 @@
  * Normally this is used with tasks created with a %NULL
  * `callback`, but note that even if the task does
  * have a callback, it will not be invoked when @task_func returns.
+ * #GTask:completed will be set to %TRUE just before this function returns.
+ *
+ * Although GLib currently rate-limits the tasks queued via
+ * g_task_run_in_thread_sync(), you should not assume that it will
+ * always do this. If you have a very large number of tasks to run,
+ * but don't want them to all run at once, you should only queue a
+ * limited number of them at a time.
  *
  * Since: 2.36
  */
@@ -36897,6 +37062,22 @@
  *
  * Returns: the appropriate #GTlsCertificateFlags
  * Since: 2.28
+ */
+
+
+/**
+ * g_tls_client_connection_copy_session_state:
+ * @conn: a #GTlsClientConnection
+ * @source: a #GTlsClientConnection
+ *
+ * Copies session state from one connection to another. This is
+ * not normally needed, but may be used when the same session
+ * needs to be used between different endpoints as is required
+ * by some protocols such as FTP over TLS. @source should have
+ * already completed a handshake, and @conn should not have
+ * completed a handshake.
+ *
+ * Since: 2.46
  */
 
 
@@ -38640,14 +38821,33 @@
 
 
 /**
+ * g_unix_mount_monitor_get:
+ *
+ * Gets the #GUnixMountMonitor for the current thread-default main
+ * context.
+ *
+ * The mount monitor can be used to monitor for changes to the list of
+ * mounted filesystems as well as the list of mount points (ie: fstab
+ * entries).
+ *
+ * You must only call g_object_unref() on the return value from under
+ * the same main context as you called this function.
+ *
+ * Returns: (transfer full): the #GUnixMountMonitor.
+ * Since: 2.44
+ */
+
+
+/**
  * g_unix_mount_monitor_new:
  *
- * Gets a new #GUnixMountMonitor. The default rate limit for which the
- * monitor will report consecutive changes for the mount and mount
- * point entry files is the default for a #GFileMonitor. Use
- * g_unix_mount_monitor_set_rate_limit() to change this.
+ * Deprecated alias for g_unix_mount_monitor_get().
+ *
+ * This function was never a true constructor, which is why it was
+ * renamed.
  *
  * Returns: a #GUnixMountMonitor.
+ * Deprecated: 2.44: Use g_unix_mount_monitor_get() instead.
  */
 
 
@@ -38657,10 +38857,16 @@
  * @limit_msec: a integer with the limit in milliseconds to
  *     poll for changes.
  *
- * Sets the rate limit to which the @mount_monitor will report
- * consecutive change events to the mount and mount point entry files.
+ * This function does nothing.
+ *
+ * Before 2.44, this was a partially-effective way of controlling the
+ * rate at which events would be reported under some uncommon
+ * circumstances.  Since @mount_monitor is a singleton, it also meant
+ * that calling this function would have side effects for other users of
+ * the monitor.
  *
  * Since: 2.18
+ * Deprecated: 2.44: This function does nothing.  Don't call it.
  */
 
 

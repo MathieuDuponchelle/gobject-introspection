@@ -807,18 +807,6 @@ g_irepository_find_by_gtype (GIRepository *repository,
   data.result_typelib = NULL;
   data.found_prefix = FALSE;
 
-  /* There is a corner case regarding GdkRectangle.  GdkRectangle is a
-   * boxed type, but it is just an alias to boxed struct
-   * CairoRectangleInt.  Scanner automatically converts all references
-   * to GdkRectangle to CairoRectangleInt, so GdkRectangle does not
-   * appear in the typelibs at all, although user code might query it.
-   * So if we get such query, we also change it to lookup of
-   * CairoRectangleInt.
-   * https://bugzilla.gnome.org/show_bug.cgi?id=655423
-   */
-  if (G_UNLIKELY (!strcmp (data.gtype_name, "GdkRectangle")))
-    data.gtype_name = "CairoRectangleInt";
-
   /* Inside each typelib, we include the "C prefix" which acts as
    * a namespace mechanism.  For GtkTreeView, the C prefix is Gtk.
    * Given the assumption that GTypes for a library also use the
@@ -1053,15 +1041,16 @@ g_irepository_get_version (GIRepository *repository,
  *   process-global default #GIRepository
  * @namespace_: Namespace to inspect
  *
- * This function returns the full path to the shared C library
- * associated with the given namespace @namespace_. There may be no
- * shared library path associated, in which case this function will
- * return %NULL.
+ * This function returns a comma-separated list of paths to the
+ * shared C libraries associated with the given namespace @namespace_.
+ * There may be no shared library path associated, in which case this
+ * function will return %NULL.
  *
  * Note: The namespace must have already been loaded using a function
  * such as g_irepository_require() before calling this function.
  *
- * Returns: Full path to shared library, or %NULL if none associated
+ * Returns: Comma-separated list of paths to shared libraries,
+ *   or %NULL if none are associated
  */
 const gchar *
 g_irepository_get_shared_library (GIRepository *repository,

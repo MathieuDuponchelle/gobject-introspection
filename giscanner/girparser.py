@@ -24,6 +24,7 @@ from xml.etree.cElementTree import parse
 
 from . import ast
 from .girwriter import COMPATIBLE_GIR_VERSION
+from .collections import OrderedDict
 
 CORE_NS = "http://www.gtk.org/introspection/core/1.0"
 C_NS = "http://www.gtk.org/introspection/c/1.0"
@@ -136,6 +137,7 @@ class GIRParser(object):
             _corens('interface'): self._parse_object_interface,
             _corens('record'): self._parse_record,
             _corens('union'): self._parse_union,
+            _corens('docsection'): self._parse_doc_section,
             _glibns('boxed'): self._parse_boxed}
 
         if not self._types_only:
@@ -146,6 +148,11 @@ class GIRParser(object):
             method = parser_methods.get(node.tag)
             if method is not None:
                 method(node)
+
+    def _parse_doc_section(self, node):
+        docsection = ast.DocSection(node.attrib["name"])
+        self._parse_generic_attribs(node, docsection)
+        self._namespace.append(docsection)
 
     def _parse_include(self, node):
         include = ast.Include(node.attrib['name'], node.attrib['version'])
@@ -165,9 +172,18 @@ class GIRParser(object):
 
     def _parse_generic_attribs(self, node, obj):
         assert isinstance(obj, ast.Annotated)
+        skip = node.attrib.get('skip')
+        if skip:
+            try:
+                obj.skip = int(skip) > 0
+            except ValueError:
+                obj.skip = False
         introspectable = node.attrib.get('introspectable')
         if introspectable:
-            obj.introspectable = int(introspectable) > 0
+            try:
+                obj.introspectable = int(introspectable) > 0
+            except ValueError:
+                obj.introspectable = False
         if self._types_only:
             return
         doc = node.find(_corens('doc'))
@@ -195,6 +211,14 @@ class GIRParser(object):
         if stability_doc is not None:
             if stability_doc.text:
                 obj.stability_doc = stability_doc.text
+        attributes = node.findall(_corens('attribute'))
+        if attributes:
+            attributes_ = OrderedDict()
+            for attribute in attributes:
+                name = attribute.attrib.get('name')
+                value = attribute.attrib.get('value')
+                attributes_[name] = value
+            obj.attributes = attributes_
 
     def _parse_object_interface(self, node):
         parent = node.attrib.get('parent')

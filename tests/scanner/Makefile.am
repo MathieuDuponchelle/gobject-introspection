@@ -5,7 +5,7 @@ include $(top_srcdir)/Makefile.introspection
 
 SUBDIRS = . annotationparser
 
-INTROSPECTION_SCANNER_ARGS += --warn-all
+INTROSPECTION_SCANNER_ARGS += --warn-all --reparse-validate
 
 CLEANFILES =
 
@@ -188,6 +188,20 @@ Identfilter-1.0.gir: identfilter.h
 		--identifier-filter-cmd="$(PYTHON) $(srcdir)/identfilter.py" \
 		--output=$@ $<
 
+EXTRA_DIST += \
+	symbolfilter.py \
+	symbolfilter.h \
+	Symbolfilter-1.0-expected.gir
+CLEANFILES += Symbolfilter-1.0.gir
+CHECKGIRS += Symbolfilter-1.0.gir
+
+Symbolfilter-1.0.gir: symbolfilter.h
+	$(AM_V_GEN) $(INTROSPECTION_SCANNER) $(INTROSPECTION_SCANNER_ARGS) \
+		--warn-all --reparse-validate \
+		--namespace=Symbolfilter --accept-unprefixed --nsversion=1.0 --header-only \
+		--symbol-filter-cmd="$(PYTHON) $(srcdir)/symbolfilter.py" \
+		--output=$@ $<
+
 if BUILD_DOCTOOL
 DOCGIRS = Regress-1.0.gir
 CHECKDOCS = $(DOCGIRS:.gir=-C) $(DOCGIRS:.gir=-Python) $(DOCGIRS:.gir=-Gjs) $(DOCGIRS:.gir=-sections.txt)
@@ -221,6 +235,7 @@ PYTESTS = \
 
 TESTS = $(CHECKGIRS) $(CHECKDOCS) $(TYPELIBS) $(PYTESTS)
 TESTS_ENVIRONMENT = srcdir=$(srcdir) top_srcdir=$(top_srcdir) builddir=$(builddir) top_builddir=$(top_builddir) \
+	CC="$(CC)" \
 	PYTHON=$(PYTHON) UNINSTALLED_INTROSPECTION_SRCDIR=$(top_srcdir)
 LOG_COMPILER = $(top_srcdir)/tests/gi-tester
 
