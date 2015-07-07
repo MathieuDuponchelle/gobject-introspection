@@ -138,6 +138,10 @@ GTKDOC_TAGS = [TAG_DEPRECATED,
                TAG_SINCE,
                TAG_STABILITY]
 
+TAG_SHORT_DESCRIPTION = 'short_description'
+
+GTKDOC_ATTAGS = [TAG_SHORT_DESCRIPTION]
+
 #   2) Deprecated basic GTK-Doc tags.
 #      Note: This list cannot be extended unless the GTK-Doc project defines new deprecated tags.
 TAG_DESCRIPTION = 'description'
@@ -451,6 +455,23 @@ PARAMETER_RE = re.compile(
     $                                                    # end
     ''',
     re.UNICODE | re.VERBOSE)
+
+# Pattern matching @tags.
+_at_tags = '|'.join(GTKDOC_ATTAGS).replace(' ', r'\s')
+GTKDOC_ATTAG_RE = re.compile(
+    r'''
+    ^                                                    # start
+    \s*                                                  # 0 or more whitespace characters
+    @                                                    # @ character
+    (?P<tag_name>''' + _at_tags + r''')                 # tag name
+    \s*                                                  # 0 or more whitespace characters
+    :{1}                                                 # 1 required delimiter
+    \s*                                                  # 0 or more whitespace characters
+    (?P<fields>.*?)                                      # annotations + value + description
+    \s*                                                  # 0 or more whitespace characters
+    $                                                    # end
+    ''',
+    re.UNICODE | re.VERBOSE | re.IGNORECASE)
 
 # Pattern matching tags.
 _all_tags = '|'.join(ALL_TAGS).replace(' ', r'\s')
@@ -1017,7 +1038,7 @@ class GtkDocCommentBlock(GtkDocAnnotatable):
     '''
 
     __slots__ = ('code_before', 'code_after', 'indentation',
-                 'name', 'params', 'description', 'tags')
+                 'name', 'params', 'description', 'short_description', 'tags')
 
     #: Valid annotation names for the GTK-Doc comment block identifier part.
     valid_annotations = (ANN_ATTRIBUTES, ANN_CONSTRUCTOR, ANN_FOREIGN, ANN_GET_VALUE_FUNC,
@@ -1046,6 +1067,9 @@ class GtkDocCommentBlock(GtkDocAnnotatable):
 
         #: The GTK-Doc comment block description part.
         self.description = None
+
+        #: The GTK-Doc comment block short description
+        self.short_description = None
 
         #: Ordered dictionary mapping tag names to :class:`GtkDocTag` instances
         #: applied to this :class:`GtkDocCommentBlock`.
@@ -1346,6 +1370,14 @@ class GtkDocCommentBlockParser(object):
                         error('identifier not found on the first line:\n%s\n%s' %
                               (original_line, marker),
                               position)
+                continue
+
+            result = GTKDOC_ATTAG_RE.match(line)
+            if result:
+                tag_name = result.group('tag_name')
+                tag_fields = result.group('fields')
+                if tag_name == TAG_SHORT_DESCRIPTION:
+                    comment_block.short_description = tag_fields
                 continue
 
             ####################################################################

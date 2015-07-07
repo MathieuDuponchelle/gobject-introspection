@@ -190,6 +190,10 @@ class GIRParser(object):
         if doc is not None:
             if doc.text:
                 obj.doc = doc.text
+        short_desc = node.find(_corens('short-description'))
+        if short_desc is not None:
+            if short_desc.text:
+                obj.short_description = short_desc.text
         version = node.attrib.get('version')
         if version:
             obj.version = version

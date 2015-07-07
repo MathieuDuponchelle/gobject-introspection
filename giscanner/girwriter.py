@@ -132,6 +132,10 @@ class GIRWriter(XMLWriter):
             self.write_tag('doc', [('xml:space', 'preserve')],
                            node.doc)
 
+        if hasattr(node, 'short_description') and node.short_description:
+            self.write_tag('short-description', [('xml:space', 'preserve')],
+                           node.short_description)
+
         if hasattr(node, 'version_doc') and node.version_doc:
             self.write_tag('doc-version', [('xml:space', 'preserve')],
                            node.version_doc)

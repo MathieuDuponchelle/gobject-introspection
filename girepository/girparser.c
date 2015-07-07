@@ -3077,6 +3077,12 @@ start_element_handler (GMarkupParseContext *context,
 	goto out;
       break;
 
+    case 's':
+      if (strcmp ("short-description", element_name) == 0)
+        {
+          state_switch (ctx, STATE_PASSTHROUGH);
+          goto out;
+        }
     case 't':
       if (start_type (context, element_name,
 		      attribute_names, attribute_values,

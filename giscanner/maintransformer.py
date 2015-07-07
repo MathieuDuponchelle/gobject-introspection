@@ -110,6 +110,7 @@ class MainTransformer(object):
             if block_name.startswith("SECTION:") and block.description:
                 node = ast.DocSection(block_name[8:])
                 node.doc = block.description
+                node.short_description = block.short_description
                 self._namespace.append(node)
 
     def _pass_fixup_hidden_fields(self, node, chain):
@@ -243,6 +244,7 @@ class MainTransformer(object):
                 block = self._blocks.pop(section_name)
                 if block.description:
                     node.doc = block.description
+                node.short_description = block.short_description
         if isinstance(node, (ast.Class, ast.Interface)):
             for prop in node.properties:
                 self._apply_annotations_property(node, prop)
