@@ -634,7 +634,7 @@ class MainTransformer(object):
         if block is None:
             return
 
-        if block.description:
+        if block.description and not node.doc:
             node.doc = block.description
 
         since_tag = block.tags.get(TAG_SINCE)
@@ -1280,6 +1280,9 @@ method or constructor of some type."""
         for field in class_struct.fields:
             callback = None
 
+            if field.private:
+                continue
+
             if isinstance(field.anonymous_node, ast.Callback):
                 callback = field.anonymous_node
             elif field.type is not None:
@@ -1295,7 +1298,9 @@ method or constructor of some type."""
             firstparam_type = callback.parameters[0].type
             if firstparam_type != node_type:
                 continue
+
             vfunc = ast.VFunction.from_callback(field.name, callback)
+            vfunc.doc = field.doc
             vfunc.instance_parameter = callback.parameters[0]
             vfunc.inherit_file_positions(callback)
 

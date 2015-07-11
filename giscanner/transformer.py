@@ -856,6 +856,10 @@ raise ValueError."""
             else:
                 field = ast.Field(child.ident, None, True, False,
                               anonymous_node=child_node)
+                if child.private:
+                    field.readable = False
+                    field.writable = False
+                    field.private = True
             compound.fields.append(field)
 
     def _create_callback(self, symbol, member=False):
