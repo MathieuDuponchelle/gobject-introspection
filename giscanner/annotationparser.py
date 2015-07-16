@@ -1376,7 +1376,7 @@ class GtkDocCommentBlockParser(object):
             if result:
                 tag_name = result.group('tag_name')
                 tag_fields = result.group('fields')
-                if tag_name == TAG_SHORT_DESCRIPTION:
+                if tag_name.lower() == TAG_SHORT_DESCRIPTION:
                     comment_block.short_description = tag_fields
                 continue
 
