@@ -956,6 +956,12 @@ Note that type resolution may not succeed."""
             if node is not None:
                 typeval.target_giname = '%s.%s' % (ns.name, node.name)
                 return True
+            if typeval.gtype_name.startswith (ns.name):
+                unprefixed_name = typeval.gtype_name[len(ns.name):]
+                node = ns.aliases.get(unprefixed_name, None)
+                if node is not None:
+                    typeval.target_giname = '%s.%s' % (ns.name, node.name)
+                    return True
         return False
 
     def _resolve_type_internal(self, typeval):
