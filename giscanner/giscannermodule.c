@@ -593,9 +593,10 @@ pygi_source_scanner_get_comments (PyGISourceScanner *self)
   for (l = comments; l; l = l->next)
     {
       GISourceComment *comment = l->data;
-      PyObject *item = Py_BuildValue ("(ssi)", comment->comment,
+      PyObject *item = Py_BuildValue ("(ssii)", comment->comment,
                                       comment->filename,
-                                      comment->line);
+                                      comment->line,
+                                      comment->endline);
       PyList_SetItem (list, i++, item);
     }
 

@@ -38,6 +38,7 @@
 
 extern FILE *yyin;
 extern int lineno;
+extern int yylineno;
 extern char linebuf[2000];
 extern char *yytext;
 
@@ -1779,6 +1780,7 @@ gi_source_scanner_parse_file (GISourceScanner *scanner, FILE *file)
   yyin = file;
   yyparse (scanner);
 
+  yylineno = 1;
   g_hash_table_destroy (const_table);
   const_table = NULL;
 
@@ -1791,6 +1793,7 @@ gboolean
 gi_source_scanner_lex_filename (GISourceScanner *scanner, const gchar *filename)
 {
   lineno = 1;
+  yylineno = 1;
   yyin = fopen (filename, "r");
 
   while (yylex (scanner) != YYEOF)

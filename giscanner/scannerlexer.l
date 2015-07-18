@@ -62,6 +62,7 @@ static void print_error (GISourceScanner *scanner);
 %}
 
 %option nounput
+%option yylineno
 
 intsuffix				([uU][lL]?[lL]?)|([lL][lL]?[uU]?)
 fracconst				([0-9]*\.[0-9]+)|([0-9]+\.)
@@ -269,6 +270,7 @@ parse_comment (GISourceScanner *scanner)
   c1 = input();
   c2 = input();
 
+  comment_lineno = yylineno - 1;
   if (c2 != EOF && (c1 == '*' && c2 != '*' && c2 != '/')) {
     /*
      * Store GTK-Doc comment blocks,
@@ -279,8 +281,6 @@ parse_comment (GISourceScanner *scanner)
     } else {
         string = g_string_new (yytext);
     }
-
-    comment_lineno = lineno;
 
     while (c2 != EOF && !(c1 == '*' && c2 == '/'))
       {
@@ -303,6 +303,7 @@ parse_comment (GISourceScanner *scanner)
     comment = g_slice_new (GISourceComment);
     comment->comment = g_string_free (string, FALSE);
     comment->line = comment_lineno;
+    comment->endline = yylineno;
     comment->filename = g_file_get_parse_name (scanner->current_file);
 
     gi_source_scanner_take_comment (scanner, comment);
@@ -410,6 +411,7 @@ process_linemarks (GISourceScanner *scanner, gboolean has_line)
 	else
 		sscanf(yytext, "# %d \"%1024[^\"]\"", &lineno, escaped_filename);
 
+	yylineno = lineno;
 	filename = g_strcompress (escaped_filename);
 
         real = _realpath (filename);

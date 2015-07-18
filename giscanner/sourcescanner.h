@@ -103,6 +103,7 @@ struct _GISourceComment
   char *comment;
   char *filename;
   int line;
+  int endline;
 };
 
 struct _GISourceScanner

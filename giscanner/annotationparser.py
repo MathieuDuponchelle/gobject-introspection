@@ -1147,9 +1147,10 @@ class GtkDocCommentBlockParser(object):
 
         comment_blocks = {}
 
-        for (comment, filename, lineno) in comments:
+        for (comment, filename, lineno, endline) in comments:
             try:
-                comment_block = self.parse_comment_block(comment, filename, lineno)
+                comment_block = self.parse_comment_block(comment, filename,
+                        lineno, endline)
             except Exception:
                 error('unrecoverable parse error, please file a GObject-Introspection bug'
                       'report including the complete comment block at the indicated location.',
@@ -1173,7 +1174,7 @@ class GtkDocCommentBlockParser(object):
 
         return comment_blocks
 
-    def parse_comment_block(self, comment, filename, lineno):
+    def parse_comment_block(self, comment, filename, lineno, endline):
         '''
         Parse a single GTK-Doc comment block.
 
@@ -1186,7 +1187,7 @@ class GtkDocCommentBlockParser(object):
 
         code_before = ''
         code_after = ''
-        comment_block_pos = Position(filename, lineno)
+        comment_block_pos = Position(filename, line=lineno, endline=endline)
         comment_lines = re.sub(LINE_BREAK_RE, '\n', comment).split('\n')
         comment_lines_len = len(comment_lines)
 

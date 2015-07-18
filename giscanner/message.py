@@ -36,11 +36,12 @@ class Position(object):
     want to inform about.
     """
 
-    __slots__ = ('filename', 'line', 'column')
+    __slots__ = ('filename', 'line', 'column', 'endline')
 
-    def __init__(self, filename=None, line=None, column=None):
+    def __init__(self, filename=None, line=None, column=None, endline=None):
         self.filename = filename
         self.line = line
+        self.endline = endline
         self.column = column
 
     def __cmp__(self, other):
